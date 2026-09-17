@@ -198,6 +198,8 @@ function DevicePage() {
 
       <PowerInfoPanel />
 
+      <StorageListPanel />
+
       <Panel className="mt-4">
         <div className="flex items-start justify-between gap-4">
           <div>
