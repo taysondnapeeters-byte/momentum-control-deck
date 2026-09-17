@@ -481,7 +481,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setSettings(DEFAULT_SETTINGS);
       },
     }),
-    [ready, deck, settings, ble, rpcState, bluetoothSupported, persistDeck, persistSettings],
+    [
+      ready,
+      deck,
+      settings,
+      ble,
+      rpcState,
+      bluetoothSupported,
+      persistDeck,
+      persistSettings,
+      statAt,
+      readAt,
+      loadPath,
+      navigateInto,
+      navigateBack,
+      openFile,
+      storagePath,
+      storageList,
+      storageLoading,
+      storageReadLoading,
+      selectedFile,
+      reconnectSupported,
+      knownDevices,
+    ],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
