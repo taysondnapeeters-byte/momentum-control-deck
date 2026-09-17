@@ -624,6 +624,7 @@ class MomentumRpc {
         { type: "dir", name: "subghz", size: 0, md5sum: null },
         { type: "dir", name: "nfc", size: 0, md5sum: null },
         { type: "dir", name: "badusb", size: 0, md5sum: null },
+        { type: "file", name: MOCK_FILE_NAME, size: MOCK_FILE_BYTES.length, md5sum: null },
       ],
       txHex: "(mock — nothing was transmitted)",
       rxHex: "(mock — nothing was received)",
