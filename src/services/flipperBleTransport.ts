@@ -310,8 +310,48 @@ class MomentumBleTransport implements FlipperBleTransport {
     this.setState("disconnected");
   }
 
-  async write(_data: Uint8Array): Promise<void> {
-    throw new Error("Writing to the Flipper is not enabled in this phase.");
+  onData(listener: (source: CharacteristicKey, bytes: Uint8Array) => void): () => void {
+    this.dataListeners.add(listener);
+    return () => {
+      this.dataListeners.delete(listener);
+    };
+  }
+
+  logEvent(level: BleLogEntry["level"], message: string): void {
+    this.addLog(level, message);
+  }
+
+  canTransfer(): boolean {
+    if (this.state !== "connected") return false;
+    const rx = this.chars.get("rx");
+    const tx = this.chars.get("tx");
+    const txEntry = this.discovery?.characteristics.find((c) => c.key === "tx");
+    return Boolean(rx && tx && txEntry?.notifying);
+  }
+
+  /**
+   * Writes one chunk to the RX characteristic. Fragmentation of larger RPC
+   * messages is handled by the layer above (see `flipperRpc.ts`).
+   */
+  async write(data: Uint8Array): Promise<void> {
+    if (this.state !== "connected") {
+      throw new Error("Not connected to a Flipper.");
+    }
+    const rx = this.chars.get("rx");
+    if (!rx) throw new Error("The RX characteristic (FE62) was not discovered.");
+    const buffer = new Uint8Array(data);
+    try {
+      if (rx.properties.writeWithoutResponse && rx.writeValueWithoutResponse) {
+        await rx.writeValueWithoutResponse(buffer);
+      } else if (rx.writeValueWithResponse) {
+        await rx.writeValueWithResponse(buffer);
+      } else {
+        await rx.writeValue(buffer);
+      }
+    } catch (error) {
+      throw new Error(`Bluetooth write failed: ${describeError(error)}`);
+    }
+    this.pushRaw("rx", new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength));
   }
 
   /**
