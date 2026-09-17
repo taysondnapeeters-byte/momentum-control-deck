@@ -201,6 +201,39 @@ export interface StorageListResult {
   at: number;
 }
 
+/** Outcome of a Storage Stat round trip (single response). */
+export interface StorageStatResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  path: string;
+  /** Metadata exactly as the device reported it, or null on failure. */
+  entry: StorageListEntry | null;
+  roundTripMs: number | null;
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+  at: number;
+}
+
+/** Outcome of a Storage Read round trip. Bytes are never decoded here. */
+export interface StorageReadResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  path: string;
+  /** Number of bytes actually received. */
+  size: number;
+  data: Uint8Array;
+  roundTripMs: number | null;
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+  at: number;
+}
+
 export interface RpcSnapshot {
   ready: boolean;
   busy: boolean;
@@ -208,6 +241,8 @@ export interface RpcSnapshot {
   lastDeviceInfo: RpcDeviceInfoResult | null;
   lastPowerInfo: RpcPowerInfoResult | null;
   lastStorageList: StorageListResult | null;
+  lastStorageStat: StorageStatResult | null;
+  lastStorageRead: StorageReadResult | null;
 }
 
 export interface FlipperRpc {
