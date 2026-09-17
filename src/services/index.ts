@@ -217,6 +217,8 @@ export interface FlipperRpc {
   ping(): Promise<RpcPingResult>;
   getDeviceInfo(): Promise<RpcDeviceInfoResult>;
   getPowerInfo(): Promise<RpcPowerInfoResult>;
+  /** Read-only directory listing for a Flipper storage path such as `/ext`. */
+  listStorage(path: string): Promise<StorageListResult>;
 }
 
 export interface FlipperDevice {
