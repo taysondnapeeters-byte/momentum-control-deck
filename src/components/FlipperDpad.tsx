@@ -7,8 +7,10 @@ import type { FlipperInputKey } from "@/services";
 /**
  * Touch controls for the six physical keys.
  *
- * Pointer down sends PRESS, pointer up/cancel/lost-capture sends RELEASE —
- * exactly once per press. Holding a key never repeats the PRESS request.
+ * Pointer down sends PRESS. Pointer up/cancel/lost-capture synthesizes the
+ * SHORT event the Flipper GUI queue expects (menus listen for SHORT, which the
+ * physical hardware timer normally produces), then sends RELEASE — exactly
+ * once per press. Holding a key never repeats the PRESS request.
  * onPointerLeave is intentionally NOT used: it fires false RELEASEs on touch
  * screens.
  */
@@ -33,7 +35,7 @@ function PadButton({
 }: {
   flipperKey: FlipperInputKey;
   label: string;
-  onInput: (key: FlipperInputKey, action: "press" | "release") => void;
+  onInput: (key: FlipperInputKey, action: "press" | "release" | "short") => void;
   disabled: boolean;
   className?: string;
   children: ReactNode;
@@ -58,6 +60,12 @@ function PadButton({
   const release = () => {
     if (!held.current) return;
     held.current = false;
+    // SHORT is synthesized here because RPC input bypasses the hardware timer
+    // that would normally produce it. RELEASE completes the gesture lifecycle.
+    console.log(
+      `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=SHORT`,
+    );
+    onInput(flipperKey, "short");
     console.log(
       `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=RELEASE`,
     );
@@ -86,7 +94,7 @@ export function FlipperDpad({
   onInput,
   disabled,
 }: {
-  onInput: (key: FlipperInputKey, action: "press" | "release") => void;
+  onInput: (key: FlipperInputKey, action: "press" | "release" | "short") => void;
   disabled: boolean;
 }) {
   const shared = { onInput, disabled };
