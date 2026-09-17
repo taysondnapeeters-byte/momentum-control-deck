@@ -942,6 +942,27 @@ class MomentumRpc {
     return result;
   }
 
+  private finishStorageList(
+    partial: Partial<StorageListResult> & { ok: boolean; path: string },
+  ): StorageListResult {
+    const result: StorageListResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      roundTripMs: partial.roundTripMs ?? null,
+      entries: partial.entries ?? [],
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastStorageList = result;
+    this.emit();
+    return result;
+  }
+
   private finishDeviceInfo(
     partial: Partial<RpcDeviceInfoResult> & { ok: boolean },
   ): RpcDeviceInfoResult {
