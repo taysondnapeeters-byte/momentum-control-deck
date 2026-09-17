@@ -131,19 +131,30 @@ function DevicePage() {
             Disconnect
           </Button>
         ) : (
-          <Button
-            size="lg"
-            className="mt-5 h-12 w-full rounded-xl text-base"
-            onClick={() => void connectFlipper()}
-            disabled={!bluetoothSupported || busy}
-          >
-            {busy ? (
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
-            ) : (
-              <Bluetooth className="mr-2 h-5 w-5" aria-hidden="true" />
-            )}
-            {busy ? STATE_LABEL[state] : "Normal Connect"}
-          </Button>
+          <>
+            <Button
+              size="lg"
+              className="mt-5 h-12 w-full rounded-xl text-base"
+              onClick={() => void connectFlipper()}
+              disabled={!bluetoothSupported || busy}
+            >
+              {busy ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+              ) : (
+                <Bluetooth className="mr-2 h-5 w-5" aria-hidden="true" />
+              )}
+              {busy ? STATE_LABEL[state] : "Normal Connect"}
+            </Button>
+            <p className="mt-3 text-xs text-muted-foreground">
+              The chooser matches Momentum's advertised 16-bit profile (0x3080 with the hardware
+              colour value, verified values 0x3080–0x3083 plus unverified forward-compatible
+              candidates 0x3084–0x308F) or the device name "Flipper". Web Bluetooth does not
+              support wildcard matching, so these values are listed individually. The advertised
+              profile alone does not prove compatibility — after connecting, the app verifies
+              that the Momentum serial GATT service (FE60) and its TX, RX, Flow Control and RPC
+              Status characteristics actually exist.
+            </p>
+          </>
         )}
       </Panel>
 
