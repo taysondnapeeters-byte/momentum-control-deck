@@ -71,6 +71,8 @@ class MomentumRpc {
   private busy = false;
   private lastPing: RpcPingResult | null = null;
   private lastDeviceInfo: RpcDeviceInfoResult | null = null;
+  /** Raw RX hex of the frames that completed a request, by command ID. */
+  private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
   private lastRxHex: string | null = null;
   private ready = false;
