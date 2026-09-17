@@ -229,7 +229,8 @@ class MomentumRpc {
   async sendRequest(main: PB.Main.$Shape, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PB.Main> {
     if (!this.transport.canTransfer()) throw new Error("Not connected to a Flipper.");
     const commandId = ++this.commandId;
-    const frame = PB.Main.encodeDelimited({ ...main, commandId }).finish();
+    const body = { ...main, commandId } as unknown as PB.Main.$Properties;
+    const frame = PB.Main.encodeDelimited(body).finish();
     const waiter = new Promise<PB.Main>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(commandId);
