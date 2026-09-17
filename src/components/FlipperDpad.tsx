@@ -44,7 +44,11 @@ function PadButton({
     if (disabled || held.current) return;
     held.current = true;
     event.preventDefault();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Best-effort: an already-released or synthetic pointer cannot be captured.
+    }
     console.log(
       `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=PRESS`,
     );
