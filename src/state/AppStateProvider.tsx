@@ -12,10 +12,12 @@ import { idbClear, idbGet, idbSet, KEY_DECK, KEY_SETTINGS } from "@/lib/idb";
 import { MOCK_DECK } from "@/data/mockDeck";
 import type { DeckButton, DeckConfig } from "@/types/deck";
 import { DEFAULT_SETTINGS, type AppSettings, type ThemeMode } from "@/types/settings";
-import type { BleSnapshot } from "@/services";
+import type { BleSnapshot, RpcPingResult, RpcSnapshot } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
+import { getFlipperRpc } from "@/services/flipperRpc";
 
 const transport = getFlipperBleTransport();
+const rpc = getFlipperRpc();
 
 interface AppStateValue {
   ready: boolean;
@@ -26,6 +28,9 @@ interface AppStateValue {
   /** Convenience alias used across the app. */
   connection: BleSnapshot["state"];
   bluetoothSupported: boolean;
+  /** Flipper RPC state. Ping is the only operation in this phase. */
+  rpc: RpcSnapshot;
+  pingFlipper: () => Promise<RpcPingResult>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
