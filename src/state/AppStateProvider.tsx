@@ -22,6 +22,7 @@ import type {
   StorageListResult,
   StorageReadResult,
   StorageStatResult,
+  StorageWriteResult,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
 import { getFlipperRpc, MAX_READ_BYTES } from "@/services/flipperRpc";
@@ -56,6 +57,11 @@ interface AppStateValue {
   navigateBackStorageDirectory: () => Promise<void>;
   openStorageFile: (name: string) => Promise<void>;
   closeStorageFile: () => void;
+  /** Create-new-file only. Refuses an existing path and verifies afterwards. */
+  storageWriteLoading: boolean;
+  createFileReport: CreateFileReport | null;
+  createStorageFile: (name: string, bytes: Uint8Array) => Promise<CreateFileReport>;
+  clearCreateFileReport: () => void;
   /** Explicit reconnect to a previously permitted device, where supported. */
   reconnectSupported: boolean;
   knownDevices: { id: string; name: string | null }[];
@@ -86,6 +92,18 @@ export interface SelectedFile {
   tooLarge: string | null;
 }
 
+/** Result of one explicit "create file" action, including its verification. */
+export interface CreateFileReport {
+  path: string;
+  size: number;
+  ok: boolean;
+  message: string;
+  write: StorageWriteResult | null;
+  stat: StorageStatResult | null;
+  read: StorageReadResult | null;
+  at: number;
+}
+
 const ROOT_PATH = "/ext";
 
 const AppStateContext = createContext<AppStateValue | null>(null);
@@ -102,6 +120,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageReadLoading, setStorageReadLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+  const [storageWriteLoading, setStorageWriteLoading] = useState(false);
+  const [createReport, setCreateReport] = useState<CreateFileReport | null>(null);
   const [reconnectSupported, setReconnectSupported] = useState(false);
   const [knownDevices, setKnownDevices] = useState<{ id: string; name: string | null }[]>([]);
   const [knownDevicesLookup, setKnownDevicesLookup] = useState<KnownDevicesLookup | null>(null);
