@@ -108,6 +108,7 @@ function emptyDiscovery(): DiscoveryReport {
     characteristics: MOMENTUM_CHARACTERISTICS.map((c) => ({
       key: c.key,
       label: c.label,
+      symbolic: c.symbolic,
       uuid: c.uuid,
       found: false,
       properties: null,
@@ -252,10 +253,10 @@ class MomentumBleTransport implements FlipperBleTransport {
             indicate: p.indicate,
           };
           this.chars.set(entry.key, characteristic);
-          this.addLog("info", `${entry.label} found`);
+          this.addLog("info", `${entry.label} (${entry.symbolic}) found`);
         } catch (error) {
           entry.error = describeError(error);
-          this.addLog("warn", `${entry.label} characteristic not available`);
+          this.addLog("warn", `${entry.label} (${entry.symbolic}) characteristic not available`);
         }
       }
 
