@@ -15,6 +15,7 @@ import type {
   CharacteristicInfo,
   CharacteristicKey,
   ConnectionState,
+  DiagnosticReport,
   DiscoveryReport,
   FlipperBleTransport,
 } from "./index";
@@ -83,6 +84,7 @@ class MomentumBleTransport implements FlipperBleTransport {
   private error: string | null = null;
   private device: BluetoothDevice | null = null;
   private discovery: DiscoveryReport | null = null;
+  private diagnostic: DiagnosticReport | null = null;
   private log: BleLogEntry[] = [];
   private raw: BleRawEntry[] = [];
   private listeners = new Set<(snapshot: BleSnapshot) => void>();
@@ -105,6 +107,7 @@ class MomentumBleTransport implements FlipperBleTransport {
       gattConnected: Boolean(this.device?.gatt?.connected),
       error: this.error,
       discovery: this.discovery,
+      diagnostic: this.diagnostic,
       log: this.log,
       raw: this.raw,
     };
@@ -240,6 +243,106 @@ class MomentumBleTransport implements FlipperBleTransport {
 
   async write(_data: Uint8Array): Promise<void> {
     throw new Error("Writing to the Flipper is not enabled in this phase.");
+  }
+
+  /**
+   * Troubleshooting only. Opens the broadest chooser the API allows
+   * (`acceptAllDevices`), connects, inspects the GATT service list and then
+   * disconnects again. Nothing is written, nothing is subscribed, and no
+   * unknown service is interpreted.
+   */
+  async runDiagnostic(): Promise<void> {
+    if (!this.isSupported()) {
+      this.fail("Web Bluetooth is not available in this browser.");
+      return;
+    }
+    if (this.state !== "disconnected" && this.state !== "error") return;
+
+    this.error = null;
+    this.diagnostic = null;
+    const report: DiagnosticReport = {
+      at: Date.now(),
+      deviceName: null,
+      gattConnected: false,
+      momentumServiceFound: false,
+      services: [],
+      servicesEnumerable: false,
+      error: null,
+    };
+
+    this.setState("requesting");
+    this.addLog("info", "Diagnostic: Bluetooth request started (accept all devices)");
+
+    let device: BluetoothDevice;
+    try {
+      device = await navigator.bluetooth!.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [MOMENTUM_SERIAL_SERVICE],
+      });
+    } catch (error) {
+      report.error = describeError(error);
+      this.diagnostic = report;
+      this.fail(report.error);
+      return;
+    }
+
+    report.deviceName = device.name ?? null;
+    this.addLog("info", "Diagnostic: device selected");
+    this.addLog("info", `Diagnostic: device name — ${device.name ?? "(not reported)"}`);
+
+    try {
+      this.setState("connecting");
+      const gatt = device.gatt;
+      if (!gatt) throw new Error("The selected device does not expose a GATT server.");
+      await gatt.connect();
+      report.gattConnected = true;
+      this.addLog("info", "Diagnostic: GATT connected");
+
+      this.setState("discovering");
+      this.addLog("info", "Diagnostic: service discovery started");
+
+      try {
+        const services = await gatt.getPrimaryServices();
+        report.servicesEnumerable = true;
+        report.services = services.map((s) => s.uuid);
+        this.addLog("info", `Diagnostic: services discovered (${report.services.length})`);
+      } catch (error) {
+        report.servicesEnumerable = false;
+        this.addLog(
+          "warn",
+          `Diagnostic: the browser did not enumerate services (${describeError(error)})`,
+        );
+      }
+
+      try {
+        await gatt.getPrimaryService(MOMENTUM_SERIAL_SERVICE);
+        report.momentumServiceFound = true;
+        this.addLog("info", "Diagnostic: Momentum Serial Service found");
+      } catch {
+        report.momentumServiceFound = false;
+        this.addLog("warn", "Diagnostic: Momentum Serial Service not found");
+      }
+
+      try {
+        if (device.gatt?.connected) device.gatt.disconnect();
+      } catch {
+        /* ignore */
+      }
+      this.addLog("info", "Diagnostic: disconnected after inspection");
+      this.diagnostic = report;
+      this.setState("disconnected");
+    } catch (error) {
+      const message = describeError(error);
+      report.error = message;
+      this.diagnostic = report;
+      this.addLog("error", `Diagnostic: ${message}`);
+      try {
+        if (device.gatt?.connected) device.gatt.disconnect();
+      } catch {
+        /* ignore */
+      }
+      this.fail(message);
+    }
   }
 
   // — internals —

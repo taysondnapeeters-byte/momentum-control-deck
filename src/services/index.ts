@@ -59,12 +59,26 @@ export interface BleRawEntry {
   byteLength: number;
 }
 
+/** Read-only troubleshooting result. Nothing is written or subscribed. */
+export interface DiagnosticReport {
+  at: number;
+  deviceName: string | null;
+  gattConnected: boolean;
+  momentumServiceFound: boolean;
+  /** UUIDs the browser actually exposed. May be incomplete by design. */
+  services: string[];
+  /** False when the browser refused to enumerate services. */
+  servicesEnumerable: boolean;
+  error: string | null;
+}
+
 export interface BleSnapshot {
   state: ConnectionState;
   deviceName: string | null;
   gattConnected: boolean;
   error: string | null;
   discovery: DiscoveryReport | null;
+  diagnostic: DiagnosticReport | null;
   log: BleLogEntry[];
   raw: BleRawEntry[];
 }
@@ -75,6 +89,8 @@ export interface FlipperBleTransport {
   subscribe(listener: (snapshot: BleSnapshot) => void): () => void;
   /** Opens the browser chooser, connects, discovers and subscribes. */
   connect(): Promise<void>;
+  /** Troubleshooting only: broad chooser, inspect services, disconnect. */
+  runDiagnostic(): Promise<void>;
   disconnect(): Promise<void>;
   clearLogs(): void;
   /** Reserved for the next phase; unused while transport is being validated. */

@@ -6,6 +6,7 @@ import { Panel, PageShell, StatusPill } from "@/components/PageShell";
 import {
   CharacteristicTable,
   ConnectionLog,
+  DiagnosticResult,
   InfoRow,
   RawDataLog,
 } from "@/components/DeviceDiagnostics";
@@ -50,6 +51,7 @@ function DevicePage() {
     settings,
     bluetoothSupported,
     connectFlipper,
+    runBleDiagnostic,
     disconnectFlipper,
     clearBleLogs,
     setMockMode,
@@ -140,10 +142,40 @@ function DevicePage() {
             ) : (
               <Bluetooth className="mr-2 h-5 w-5" aria-hidden="true" />
             )}
-            {busy ? STATE_LABEL[state] : "Connect Flipper"}
+            {busy ? STATE_LABEL[state] : "Normal Connect"}
           </Button>
         )}
       </Panel>
+
+      <Panel className="mt-4">
+        <h3 className="text-sm font-semibold">Diagnostic Connect</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Troubleshooting only. Shows every nearby Bluetooth device the browser is willing to
+          list, then checks whether the one you pick actually exposes the Momentum serial
+          service. Nothing is sent to the device and no data is subscribed to.
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Web Bluetooth limitation: the browser only reveals services that were named before the
+          chooser opened, so the service list below can be incomplete even for a working
+          Flipper. The Momentum service check itself is always accurate.
+        </p>
+        <Button
+          size="lg"
+          variant="outline"
+          className="mt-4 h-12 w-full rounded-xl text-base"
+          onClick={() => void runBleDiagnostic()}
+          disabled={!bluetoothSupported || busy || connected}
+        >
+          {busy ? (
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Bluetooth className="mr-2 h-5 w-5" aria-hidden="true" />
+          )}
+          Diagnostic Connect
+        </Button>
+      </Panel>
+
+      {ble.diagnostic ? <DiagnosticResult report={ble.diagnostic} /> : null}
 
       <Panel className="mt-4">
         <div className="flex items-start justify-between gap-4">

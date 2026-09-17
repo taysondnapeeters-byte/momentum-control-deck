@@ -1,6 +1,13 @@
 import { Panel } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
-import type { BleLogEntry, BleRawEntry, CharacteristicInfo, DiscoveryReport } from "@/services";
+import type {
+  BleLogEntry,
+  BleRawEntry,
+  CharacteristicInfo,
+  DiagnosticReport,
+  DiscoveryReport,
+} from "@/services";
+import { MOMENTUM_SERIAL_SERVICE } from "@/services/flipperBleTransport";
 
 function formatTime(at: number): string {
   const d = new Date(at);
@@ -68,6 +75,59 @@ export function CharacteristicTable({ discovery }: { discovery: DiscoveryReport 
           </div>
         ))}
       </div>
+    </Panel>
+  );
+}
+
+export function DiagnosticResult({ report }: { report: DiagnosticReport }) {
+  return (
+    <Panel className="mt-4">
+      <h3 className="text-sm font-semibold">Diagnostic result</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Read-only inspection of the device you picked in the browser chooser. Appearing in the
+        chooser does not make a device a Flipper.
+      </p>
+
+      <div className="mt-3">
+        <InfoRow label="Selected device name" value={report.deviceName ?? "(not reported)"} />
+        <InfoRow label="GATT connected" value={report.gattConnected ? "YES" : "NO"} />
+        <InfoRow
+          label="Momentum Serial Service found"
+          value={report.momentumServiceFound ? "YES" : "NO"}
+        />
+      </div>
+
+      <p className="mt-3 break-all font-mono text-[10px] text-muted-foreground">
+        {MOMENTUM_SERIAL_SERVICE}
+      </p>
+
+      <h4 className="mt-4 text-sm font-semibold">Discovered services</h4>
+      {report.servicesEnumerable ? (
+        report.services.length > 0 ? (
+          <ul className="mt-2 space-y-1 font-mono text-[11px]">
+            {report.services.map((uuid) => (
+              <li key={uuid} className="break-all">
+                {uuid}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">
+            The device exposed no services the browser was allowed to list.
+          </p>
+        )
+      ) : (
+        <p className="mt-2 text-sm text-muted-foreground">
+          The browser refused to list services. Web Bluetooth only reveals services that were
+          requested up front, so this list can be empty even on a working Flipper.
+        </p>
+      )}
+
+      {report.error ? (
+        <p className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          {report.error}
+        </p>
+      ) : null}
     </Panel>
   );
 }
