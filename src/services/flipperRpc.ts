@@ -1487,11 +1487,18 @@ class MomentumRpc {
    * Generic request path. Kept small and reusable so later phases can send
    * other `PB.Main` messages without touching the framing or pending-map logic.
    */
-  async sendRequest(main: PB.Main.$Shape, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PB.Main[]> {
+  async sendRequest(
+    main: PB.Main.$Shape,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+    logTxHex = false,
+  ): Promise<PB.Main[]> {
     if (!this.transport.canTransfer()) throw new Error("Not connected to a Flipper.");
     const commandId = ++this.commandId;
     const body = { ...main, commandId } as unknown as PB.Main.$Properties;
     const frame = PB.Main.encodeDelimited(body).finish();
+    if (logTxHex) {
+      this.transport.logEvent("info", `RPC TX (${frame.length} B): ${toHex(frame)}`);
+    }
     const waiter = this.track(commandId, performance.now(), timeoutMs, "RPC request timeout");
     try {
       await this.writeFramed(frame);
@@ -1543,11 +1550,28 @@ class MomentumRpc {
     key: FlipperInputKey,
     action: FlipperInputAction,
   ): Promise<RpcSimpleResult> {
-    return this.simpleRequest(`Input ${key} ${action}`, {
-      commandStatus: PB.CommandStatus.OK,
-      hasNext: false,
-      guiSendInputEventRequest: { key: INPUT_KEYS[key], type: INPUT_TYPES[action] },
-    });
+    const keyValue = INPUT_KEYS[key];
+    const typeValue = INPUT_TYPES[action];
+    console.log(`Virtual Flipper input RPC:\nkey=${keyValue}\ntype=${typeValue}`);
+    const result = await this.simpleRequest(
+      `Input ${key} ${action}`,
+      {
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        guiSendInputEventRequest: { key: keyValue, type: typeValue },
+      },
+      { logTxHex: true },
+    );
+    if (result.status !== null) {
+      console.log(
+        `Virtual Flipper input RPC result:\nkey=${keyValue}\ntype=${typeValue}\nstatus=${result.status}`,
+      );
+    } else {
+      console.log(
+        `Virtual Flipper input RPC error:\nkey=${keyValue}\ntype=${typeValue}\nerror=${result.error ?? "unknown"}`,
+      );
+    }
+    return result;
   }
 
   /** Mock-mode equivalents. Nothing is transmitted and nothing is decoded. */
@@ -1564,10 +1588,15 @@ class MomentumRpc {
     };
   }
 
-  /** Shared single-response request helper used by the GUI operations. */
+  /**
+   * Shared single-response request helper used by the GUI operations.
+   * `opts.logTxHex` mirrors the outgoing frame into the capped connection log
+   * (used for input-event wire-format diagnostics only).
+   */
   private async simpleRequest(
     label: string,
     main: PB.Main.$Shape,
+    opts?: { logTxHex?: boolean },
   ): Promise<RpcSimpleResult> {
     const at = Date.now();
     if (!this.transport.canTransfer() || !this.ready) {
@@ -1583,7 +1612,7 @@ class MomentumRpc {
     }
     const started = performance.now();
     try {
-      const parts = await this.sendRequest(main);
+      const parts = await this.sendRequest(main, REQUEST_TIMEOUT_MS, opts?.logTxHex);
       const response = parts[0] as PB.Main | undefined;
       const statusValue = Number(response?.commandStatus ?? 0);
       const status = statusName(statusValue);
