@@ -12,10 +12,12 @@ import { idbClear, idbGet, idbSet, KEY_DECK, KEY_SETTINGS } from "@/lib/idb";
 import { MOCK_DECK } from "@/data/mockDeck";
 import type { DeckButton, DeckConfig } from "@/types/deck";
 import { DEFAULT_SETTINGS, type AppSettings, type ThemeMode } from "@/types/settings";
-import type { BleSnapshot } from "@/services";
+import type { BleSnapshot, RpcPingResult, RpcSnapshot } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
+import { getFlipperRpc } from "@/services/flipperRpc";
 
 const transport = getFlipperBleTransport();
+const rpc = getFlipperRpc();
 
 interface AppStateValue {
   ready: boolean;
@@ -26,6 +28,9 @@ interface AppStateValue {
   /** Convenience alias used across the app. */
   connection: BleSnapshot["state"];
   bluetoothSupported: boolean;
+  /** Flipper RPC state. Ping is the only operation in this phase. */
+  rpc: RpcSnapshot;
+  pingFlipper: () => Promise<RpcPingResult>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
@@ -48,11 +53,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [ble, setBle] = useState<BleSnapshot>(() => transport.getSnapshot());
   const [bluetoothSupported, setBluetoothSupported] = useState(false);
+  const [rpcState, setRpcState] = useState<RpcSnapshot>(() => rpc.getSnapshot());
 
   useEffect(() => {
     setBluetoothSupported(transport.isSupported());
     setBle(transport.getSnapshot());
     return transport.subscribe(setBle);
+  }, []);
+
+  useEffect(() => {
+    setRpcState(rpc.getSnapshot());
+    return rpc.subscribe(setRpcState);
   }, []);
 
   useEffect(() => {
@@ -108,6 +119,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       ble,
       connection: ble.state,
       bluetoothSupported,
+      rpc: rpcState,
+      pingFlipper: async () => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockPing();
+        try {
+          return await rpc.ping();
+        } catch (error) {
+          console.error("RPC ping failed", error);
+          return rpc.getSnapshot().lastPing ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            roundTripMs: null,
+            payload: null,
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+          };
+        }
+      },
       connectFlipper: async () => {
         try {
           await transport.connect();
@@ -161,7 +193,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setSettings(DEFAULT_SETTINGS);
       },
     }),
-    [ready, deck, settings, ble, bluetoothSupported, persistDeck, persistSettings],
+    [ready, deck, settings, ble, rpcState, bluetoothSupported, persistDeck, persistSettings],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

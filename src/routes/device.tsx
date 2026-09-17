@@ -10,6 +10,7 @@ import {
   InfoRow,
   RawDataLog,
 } from "@/components/DeviceDiagnostics";
+import { RpcPanel } from "@/components/RpcPanel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAppState } from "@/state/AppStateProvider";
@@ -187,6 +188,8 @@ function DevicePage() {
       </Panel>
 
       {ble.diagnostic ? <DiagnosticResult report={ble.diagnostic} /> : null}
+
+      <RpcPanel />
 
       <Panel className="mt-4">
         <div className="flex items-start justify-between gap-4">
