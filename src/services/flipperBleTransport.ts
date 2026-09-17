@@ -223,7 +223,7 @@ class MomentumBleTransport implements FlipperBleTransport {
             indicate: p.indicate,
           };
           this.chars.set(entry.key, characteristic);
-          this.addLog("info", `${entry.label} characteristic discovered`);
+          this.addLog("info", `${entry.label} found`);
         } catch (error) {
           entry.error = describeError(error);
           this.addLog("warn", `${entry.label} characteristic not available`);
@@ -259,6 +259,7 @@ class MomentumBleTransport implements FlipperBleTransport {
           : "No notify/indicate characteristics available",
       );
 
+      this.addLog("info", "Connection ready");
       this.setState("connected");
     } catch (error) {
       const message = describeError(error);
