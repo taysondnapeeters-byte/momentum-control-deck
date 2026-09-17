@@ -275,6 +275,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const result = await listAt(target);
         setStoragePath(target);
         setStorageList(result);
+        // Only the path string is persisted; never a Bluetooth object.
+        setSettings((current) => {
+          if (current.lastStoragePath === target) return current;
+          const next = { ...current, lastStoragePath: target };
+          void idbSet(KEY_SETTINGS, next);
+          return next;
+        });
       } finally {
         setStorageLoading(false);
       }
