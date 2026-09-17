@@ -218,6 +218,51 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           };
         }
       },
+      refreshStorageStat: async (path) => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageStat(path);
+        try {
+          return await rpc.statStorage(path);
+        } catch (error) {
+          console.error("Storage Stat failed", error);
+          return rpc.getSnapshot().lastStorageStat ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            path,
+            entry: null,
+            roundTripMs: null,
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+            at: Date.now(),
+          };
+        }
+      },
+      readStorageFile: async (path) => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageRead(path);
+        try {
+          return await rpc.readStorage(path);
+        } catch (error) {
+          console.error("Storage Read failed", error);
+          return rpc.getSnapshot().lastStorageRead ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            path,
+            size: 0,
+            data: new Uint8Array(0),
+            roundTripMs: null,
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+            at: Date.now(),
+          };
+        }
+      },
       connectFlipper: async () => {
         try {
           await transport.connect();
