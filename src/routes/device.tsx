@@ -11,6 +11,7 @@ import {
   RawDataLog,
 } from "@/components/DeviceDiagnostics";
 import { DeviceInfoPanel } from "@/components/DeviceInfoPanel";
+import { PowerInfoPanel } from "@/components/PowerInfoPanel";
 import { RpcPanel } from "@/components/RpcPanel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -193,6 +194,8 @@ function DevicePage() {
       <RpcPanel />
 
       <DeviceInfoPanel />
+
+      <PowerInfoPanel />
 
       <Panel className="mt-4">
         <div className="flex items-start justify-between gap-4">

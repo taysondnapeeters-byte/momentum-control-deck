@@ -20,6 +20,8 @@ import type {
   RpcDeviceInfoEntry,
   RpcDeviceInfoResult,
   RpcPingResult,
+  RpcPowerInfoEntry,
+  RpcPowerInfoResult,
   RpcSnapshot,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
@@ -71,6 +73,7 @@ class MomentumRpc {
   private busy = false;
   private lastPing: RpcPingResult | null = null;
   private lastDeviceInfo: RpcDeviceInfoResult | null = null;
+  private lastPowerInfo: RpcPowerInfoResult | null = null;
   /** Raw RX hex of the frames that completed a request, by command ID. */
   private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
@@ -105,6 +108,7 @@ class MomentumRpc {
       busy: this.busy,
       lastPing: this.lastPing,
       lastDeviceInfo: this.lastDeviceInfo,
+      lastPowerInfo: this.lastPowerInfo,
     };
   }
 
@@ -394,6 +398,160 @@ class MomentumRpc {
     });
   }
 
+  /** Simulated power info. Always labelled as mock; never real hardware data. */
+  mockPowerInfo(): RpcPowerInfoResult {
+    const result: RpcPowerInfoResult = {
+      ok: true,
+      mock: true,
+      commandId: ++this.commandId,
+      roundTripMs: 16,
+      entries: [
+        { key: "charge_level", value: "(mock)" },
+        { key: "charging", value: "(mock)" },
+      ],
+      txHex: "(mock — nothing was transmitted)",
+      rxHex: "(mock — nothing was received)",
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+    this.lastPowerInfo = result;
+    this.transport.logEvent("info", "Mock Power Info — simulated, no Flipper involved");
+    this.emit();
+    return result;
+  }
+
+  /**
+   * Read-only System Power Info. Like Device Info, the Flipper answers with a
+   * stream of key/value `PB.Main` messages sharing one command ID.
+   */
+  async getPowerInfo(): Promise<RpcPowerInfoResult> {
+    const log = this.transport.logEvent.bind(this.transport);
+
+    if (!this.transport.canTransfer() || !this.ready) {
+      const message =
+        this.transport.getSnapshot().state === "connected"
+          ? "RPC is not ready — the TX/RX characteristics are not usable."
+          : "Not connected to a Flipper.";
+      log("error", `Power Info failed: ${message}`);
+      return this.finishPowerInfo({ ok: false, error: message });
+    }
+
+    const commandId = ++this.commandId;
+    log("info", "Power Info request created");
+    log("info", `Power Info command ID: ${commandId}`);
+
+    let frame: Uint8Array;
+    try {
+      frame = PB.Main.encodeDelimited({
+        commandId,
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        systemPowerInfoRequest: {},
+      }).finish();
+    } catch (error) {
+      const message = `Protobuf encode failed: ${describe(error)}`;
+      log("error", `Power Info failed: ${message}`);
+      return this.finishPowerInfo({ ok: false, commandId, error: message });
+    }
+
+    const txHex = toHex(frame);
+    log("info", `Power Info TX bytes: ${txHex}`);
+
+    const started = performance.now();
+    const waiter = this.track(commandId, started, REQUEST_TIMEOUT_MS, "Power Info timeout");
+
+    try {
+      await this.writeFramed(frame);
+    } catch (error) {
+      this.clearPending(commandId);
+      const message = describe(error);
+      log("error", `Power Info failed: ${message}`);
+      return this.finishPowerInfo({ ok: false, commandId, txHex, error: message });
+    }
+
+    let parts: PB.Main[];
+    try {
+      parts = await waiter;
+    } catch (error) {
+      const message = describe(error);
+      log("error", `Power Info failed: ${message}`);
+      return this.finishPowerInfo({ ok: false, commandId, txHex, error: message });
+    }
+
+    const roundTripMs = Math.round(performance.now() - started);
+    const rxHex = this.completedRxHex.get(commandId) ?? null;
+    this.completedRxHex.delete(commandId);
+    log("info", "Power Info response received");
+
+    const first = parts[0] as PB.Main;
+    const status = statusName(first.commandStatus);
+    log("info", `Power Info response command ID: ${first.commandId}`);
+    log("info", `Power Info response status: ${status}`);
+
+    const mismatched = parts.find((part) => Number(part.commandId ?? 0) !== commandId);
+    if (mismatched) {
+      const message = "Power Info response command ID mismatch";
+      log("error", message);
+      return this.finishPowerInfo({
+        ok: false,
+        commandId,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: message,
+      });
+    }
+
+    const failed = parts.find((part) => (part.commandStatus ?? 0) !== PB.CommandStatus.OK);
+    if (failed) {
+      const failedStatus = statusName(failed.commandStatus);
+      const message = `The Flipper returned status ${failedStatus}.`;
+      log("error", `Power Info failed: ${message}`);
+      return this.finishPowerInfo({
+        ok: false,
+        commandId,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status: failedStatus,
+        error: message,
+      });
+    }
+
+    const entries: RpcPowerInfoEntry[] = [];
+    for (const part of parts) {
+      const info = part.systemPowerInfoResponse;
+      if (!info) {
+        const message = "The response did not contain power information.";
+        log("error", `Power Info failed: ${message}`);
+        return this.finishPowerInfo({
+          ok: false,
+          commandId,
+          txHex,
+          rxHex,
+          roundTripMs,
+          status,
+          error: message,
+        });
+      }
+      entries.push({ key: info.key ?? "", value: info.value ?? "" });
+    }
+
+    log("info", "Power Info decoded successfully");
+    return this.finishPowerInfo({
+      ok: true,
+      commandId,
+      txHex,
+      rxHex,
+      roundTripMs,
+      status,
+      entries,
+    });
+  }
+
+
   /**
    * Generic request path. Kept small and reusable so later phases can send
    * other `PB.Main` messages without touching the framing or pending-map logic.
@@ -543,6 +701,26 @@ class MomentumRpc {
       error: partial.error ?? null,
     };
     this.lastPing = result;
+    this.emit();
+    return result;
+  }
+
+  private finishPowerInfo(
+    partial: Partial<RpcPowerInfoResult> & { ok: boolean },
+  ): RpcPowerInfoResult {
+    const result: RpcPowerInfoResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      roundTripMs: partial.roundTripMs ?? null,
+      entries: partial.entries ?? [],
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastPowerInfo = result;
     this.emit();
     return result;
   }
