@@ -34,6 +34,27 @@ export const MOMENTUM_CHARACTERISTICS: Array<{
   { key: "rpcStatus", label: "RPC Status", uuid: "0000fe64-8e22-4541-9d4c-21edae82ed19" },
 ];
 
+/**
+ * Momentum advertises a 16-bit service value, not the FE60 GATT UUID.
+ * Base value 0x3080, with the hardware colour enum (Unknown 0x00, Black 0x01,
+ * White 0x02, Transparent 0x03) OR-ed in.
+ */
+const SIG_BASE = "-0000-1000-8000-00805f9b34fb";
+
+/** Verified Momentum advertising service values (0x3080–0x3083). */
+export const MOMENTUM_ADVERTISING_UUIDS = [0x3080, 0x3081, 0x3082, 0x3083].map(
+  (value) => `0000${value.toString(16)}${SIG_BASE}`,
+);
+
+/**
+ * 0x3084–0x308F: UNVERIFIED, forward-compatible candidates only — not known
+ * Momentum values. Kept defensively so future colour/capability bits still match.
+ */
+export const UNVERIFIED_ADVERTISING_UUIDS = Array.from(
+  { length: 0x308f - 0x3084 + 1 },
+  (_, i) => `0000${(0x3084 + i).toString(16)}${SIG_BASE}`,
+);
+
 const MAX_LOG = 200;
 const MAX_RAW = 200;
 
