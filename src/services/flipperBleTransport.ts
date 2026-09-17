@@ -383,6 +383,48 @@ class MomentumBleTransport implements FlipperBleTransport {
 
   // — internals —
 
+  /**
+   * "Momentum advertising profile detected" is logged only when the browser
+   * can actually confirm the advertised service UUID via
+   * `watchAdvertisements()`. Browsers without that API skip the log entry —
+   * we never claim detection we did not observe.
+   */
+  private detectAdvertising(device: BluetoothDevice): Promise<boolean> {
+    const watcher = device as BluetoothDevice & {
+      watchAdvertisements?: (options?: { signal?: AbortSignal }) => Promise<void>;
+    };
+    if (typeof watcher.watchAdvertisements !== "function") return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      const controller = new AbortController();
+      let settled = false;
+      const done = (detected: boolean) => {
+        if (settled) return;
+        settled = true;
+        try {
+          controller.abort();
+        } catch {
+          /* ignore */
+        }
+        resolve(detected);
+      };
+      device.addEventListener(
+        "advertisementreceived",
+        (event: Event) => {
+          const uuids = (event as Event & { uuids?: string[] }).uuids ?? [];
+          done(uuids.some((uuid) => MOMENTUM_ADVERTISING_UUIDS.includes(uuid)));
+        },
+        { signal: controller.signal },
+      );
+      try {
+        void watcher.watchAdvertisements!({ signal: controller.signal }).catch(() => done(false));
+      } catch {
+        done(false);
+      }
+      setTimeout(() => done(false), 1500);
+    });
+  }
+
   private async hardDisconnect(): Promise<void> {
     for (const [key, characteristic] of this.chars) {
       const handler = this.notifyHandlers.get(key);
