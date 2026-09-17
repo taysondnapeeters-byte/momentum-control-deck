@@ -20,6 +20,8 @@ import type {
   RpcDeviceInfoEntry,
   RpcDeviceInfoResult,
   RpcPingResult,
+  RpcPowerInfoEntry,
+  RpcPowerInfoResult,
   RpcSnapshot,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
@@ -71,6 +73,7 @@ class MomentumRpc {
   private busy = false;
   private lastPing: RpcPingResult | null = null;
   private lastDeviceInfo: RpcDeviceInfoResult | null = null;
+  private lastPowerInfo: RpcPowerInfoResult | null = null;
   /** Raw RX hex of the frames that completed a request, by command ID. */
   private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
@@ -105,6 +108,7 @@ class MomentumRpc {
       busy: this.busy,
       lastPing: this.lastPing,
       lastDeviceInfo: this.lastDeviceInfo,
+      lastPowerInfo: this.lastPowerInfo,
     };
   }
 
