@@ -66,7 +66,7 @@ function PadButton({
       holdTimer.current = null;
     }
     if (repeatTimer.current !== null) {
-      clearInterval(repeatTimer.current);
+      clearTimeout(repeatTimer.current);
       repeatTimer.current = null;
     }
   };
