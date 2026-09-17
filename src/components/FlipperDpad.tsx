@@ -9,7 +9,19 @@ import type { FlipperInputKey } from "@/services";
  *
  * Pointer down sends PRESS, pointer up/cancel/lost-capture sends RELEASE —
  * exactly once per press. Holding a key never repeats the PRESS request.
+ * onPointerLeave is intentionally NOT used: it fires false RELEASEs on touch
+ * screens.
  */
+
+/** `PB_Gui.InputKey` firmware values — mirrors INPUT_KEYS in flipperRpc.ts. */
+const FLIPPER_KEYS: Record<FlipperInputKey, number> = {
+  up: 0,
+  down: 1,
+  right: 2,
+  left: 3,
+  ok: 4,
+  back: 5,
+};
 
 function PadButton({
   flipperKey,
@@ -31,13 +43,20 @@ function PadButton({
   const press = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (disabled || held.current) return;
     held.current = true;
+    event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    console.log(
+      `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=PRESS`,
+    );
     onInput(flipperKey, "press");
   };
 
   const release = () => {
     if (!held.current) return;
     held.current = false;
+    console.log(
+      `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=RELEASE`,
+    );
     onInput(flipperKey, "release");
   };
 
