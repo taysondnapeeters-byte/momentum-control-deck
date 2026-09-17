@@ -90,15 +90,8 @@ function PadButton({
       if (!held.current) return;
       isHold.current = true;
       log("LONG");
-      onInput(flipperKey, "holdStart");
-      repeatTimer.current = setInterval(() => {
-        if (!held.current) {
-          clearTimers();
-          return;
-        }
-        log("REPEAT");
-        onInput(flipperKey, "holdRepeat");
-      }, REPEAT_INTERVAL_MS);
+      void onInput(flipperKey, "holdStart");
+      scheduleRepeat();
     }, HOLD_THRESHOLD_MS);
   };
 
