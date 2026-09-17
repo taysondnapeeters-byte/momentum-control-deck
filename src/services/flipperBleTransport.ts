@@ -20,18 +20,24 @@ import type {
   FlipperBleTransport,
 } from "./index";
 
-/** UUIDs from the Momentum Firmware source. Do not add others. */
-export const MOMENTUM_SERIAL_SERVICE = "0000fe60-cc7a-482a-984a-7f2ed5b3e58f";
+/**
+ * Canonical Momentum GATT UUIDs, as reported by an independent Android GATT
+ * scanner. The firmware source stores these as BLE-stack byte arrays whose
+ * textual grouping is NOT the canonical UUID string — do not regroup them.
+ * Symbolic labels (FE60 etc.) are kept in comments/logs only.
+ */
+export const MOMENTUM_SERIAL_SERVICE = "8fe5b3d5-2e7f-4a98-2a48-7acc60fe0000"; // FE60
 
 export const MOMENTUM_CHARACTERISTICS: Array<{
   key: CharacteristicKey;
   label: string;
+  symbolic: string;
   uuid: string;
 }> = [
-  { key: "tx", label: "TX", uuid: "0000fe61-8e22-4541-9d4c-21edae82ed19" },
-  { key: "rx", label: "RX", uuid: "0000fe62-8e22-4541-9d4c-21edae82ed19" },
-  { key: "flowControl", label: "Flow Control", uuid: "0000fe63-8e22-4541-9d4c-21edae82ed19" },
-  { key: "rpcStatus", label: "RPC Status", uuid: "0000fe64-8e22-4541-9d4c-21edae82ed19" },
+  { key: "tx", label: "TX", symbolic: "FE61", uuid: "19ed82ae-ed21-4c9d-4145-228e61fe0000" },
+  { key: "rx", label: "RX", symbolic: "FE62", uuid: "19ed82ae-ed21-4c9d-4145-228e62fe0000" },
+  { key: "flowControl", label: "Flow Control", symbolic: "FE63", uuid: "19ed82ae-ed21-4c9d-4145-228e63fe0000" },
+  { key: "rpcStatus", label: "RPC Status", symbolic: "FE64", uuid: "19ed82ae-ed21-4c9d-4145-228e64fe0000" },
 ];
 
 /**
@@ -169,18 +175,19 @@ class MomentumBleTransport implements FlipperBleTransport {
     this.discovery = null;
     this.setState("requesting");
     this.addLog("info", "Bluetooth chooser opened");
-    this.addLog("info", "Diagnostic experiment: acceptAllDevices + optionalServices[FE60]");
-    this.addLog("info", `Momentum Serial Service UUID: ${MOMENTUM_SERIAL_SERVICE}`);
+    this.addLog("info", `Momentum Serial Service (FE60): ${MOMENTUM_SERIAL_SERVICE}`);
     this.addLog("info", `optionalServices: [${MOMENTUM_SERIAL_SERVICE}]`);
 
     let device: BluetoothDevice;
     try {
       device = await navigator.bluetooth!.requestDevice({
-        // TEMPORARY diagnostic experiment: the selection filter is removed
-        // entirely so we can determine whether Chrome exposes FE60 when the
-        // device is chosen with no filter at all. Note: `namePrefix` cannot
-        // be combined with `acceptAllDevices` — the API forbids mixing them.
-        acceptAllDevices: true,
+        // OR semantics across filter objects: any verified/unverified
+        // Momentum advertising service value, or the "Flipper" name prefix.
+        filters: [
+          ...MOMENTUM_ADVERTISING_UUIDS.map((uuid) => ({ services: [uuid] })),
+          ...UNVERIFIED_ADVERTISING_UUIDS.map((uuid) => ({ services: [uuid] })),
+          { namePrefix: "Flipper" },
+        ],
         optionalServices: [MOMENTUM_SERIAL_SERVICE],
       });
     } catch (error) {
