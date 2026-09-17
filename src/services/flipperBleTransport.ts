@@ -157,12 +157,19 @@ class MomentumBleTransport implements FlipperBleTransport {
     this.error = null;
     this.discovery = null;
     this.setState("requesting");
-    this.addLog("info", "Bluetooth request started");
+    this.addLog("info", "Bluetooth chooser opened");
 
     let device: BluetoothDevice;
     try {
       device = await navigator.bluetooth!.requestDevice({
-        filters: [{ services: [MOMENTUM_SERIAL_SERVICE] }],
+        // Web Bluetooth OR-filters across filter objects: any advertised
+        // Momentum value OR a "Flipper" name prefix matches.
+        filters: [
+          ...[...MOMENTUM_ADVERTISING_UUIDS, ...UNVERIFIED_ADVERTISING_UUIDS].map(
+            (services) => ({ services }) as { services: string[] },
+          ),
+          { namePrefix: "Flipper" },
+        ],
         optionalServices: [MOMENTUM_SERIAL_SERVICE],
       });
     } catch (error) {
