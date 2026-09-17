@@ -289,6 +289,42 @@ export interface RpcSnapshot {
   lastStorageWrite: StorageWriteResult | null;
 }
 
+/** Screen orientation exactly as `PB_Gui.ScreenOrientation` reports it. */
+export type ScreenOrientation =
+  | "horizontal"
+  | "horizontal_flip"
+  | "vertical"
+  | "vertical_flip";
+
+/**
+ * One unsolicited `gui_screen_frame` message. `data` is the raw Flipper
+ * framebuffer, untouched; decoding lives in `flipperScreen.ts`.
+ */
+export interface ScreenFrameEvent {
+  data: Uint8Array;
+  orientation: ScreenOrientation;
+  /** Momentum colour metadata, exactly as received. 0 when absent. */
+  bgColor: number;
+  fgColor: number;
+  at: number;
+}
+
+/** The six physical Flipper keys the virtual pad drives. */
+export type FlipperInputKey = "up" | "down" | "left" | "right" | "ok" | "back";
+/** Only press/release are used; the firmware also knows short/long/repeat. */
+export type FlipperInputAction = "press" | "release" | "short" | "long" | "repeat";
+
+/** Generic outcome of a simple one-response RPC request. */
+export interface RpcSimpleResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  roundTripMs: number | null;
+  status: string | null;
+  error: string | null;
+  at: number;
+}
+
 export interface FlipperRpc {
   isReady(): boolean;
   getSnapshot(): RpcSnapshot;
