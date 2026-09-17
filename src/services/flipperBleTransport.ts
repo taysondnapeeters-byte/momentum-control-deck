@@ -166,7 +166,7 @@ class MomentumBleTransport implements FlipperBleTransport {
         // Momentum value OR a "Flipper" name prefix matches.
         filters: [
           ...[...MOMENTUM_ADVERTISING_UUIDS, ...UNVERIFIED_ADVERTISING_UUIDS].map(
-            (services) => ({ services }) as { services: string[] },
+            (uuid) => ({ services: uuid }),
           ),
           { namePrefix: "Flipper" },
         ],
