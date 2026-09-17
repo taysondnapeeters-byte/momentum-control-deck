@@ -809,7 +809,7 @@ class MomentumRpc {
       mock: true,
       commandId: ++this.commandId,
       path,
-      entry: { type: "file", name: MOCK_FILE_NAME, size: MOCK_FILE_BYTES.length, md5sum: null },
+      entry: mockEntryFor(path),
       roundTripMs: 14,
       txHex: "(mock — nothing was transmitted)",
       rxHex: "(mock — nothing was received)",
