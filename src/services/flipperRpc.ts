@@ -1502,6 +1502,117 @@ class MomentumRpc {
     return waiter;
   }
 
+  // — GUI screen stream (Momentum GUI RPC) —
+
+  /** Subscribes to every unsolicited RPC message. */
+  onEvent(listener: (message: PB.Main) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
+  }
+
+  /** Subscribes to decoded `gui_screen_frame` events. */
+  onScreenFrame(listener: (frame: ScreenFrameEvent) => void): () => void {
+    this.frameListeners.add(listener);
+    return () => {
+      this.frameListeners.delete(listener);
+    };
+  }
+
+  /** Tracked request: the firmware answers once, then streams frames. */
+  async startScreenStream(): Promise<RpcSimpleResult> {
+    return this.simpleRequest("Screen stream start", {
+      commandStatus: PB.CommandStatus.OK,
+      hasNext: false,
+      guiStartScreenStreamRequest: {},
+    });
+  }
+
+  /** Tracked request: the firmware answers once the stream is stopped. */
+  async stopScreenStream(): Promise<RpcSimpleResult> {
+    return this.simpleRequest("Screen stream stop", {
+      commandStatus: PB.CommandStatus.OK,
+      hasNext: false,
+      guiStopScreenStreamRequest: {},
+    });
+  }
+
+  /** One GUI input event. Press/release pairing is the caller's job. */
+  async sendInputEvent(
+    key: FlipperInputKey,
+    action: FlipperInputAction,
+  ): Promise<RpcSimpleResult> {
+    return this.simpleRequest(`Input ${key} ${action}`, {
+      commandStatus: PB.CommandStatus.OK,
+      hasNext: false,
+      guiSendInputEventRequest: { key: INPUT_KEYS[key], type: INPUT_TYPES[action] },
+    });
+  }
+
+  /** Mock-mode equivalents. Nothing is transmitted and nothing is decoded. */
+  mockSimpleResult(label: string): RpcSimpleResult {
+    this.transport.logEvent("info", `Mock ${label} — simulated, no Flipper involved`);
+    return {
+      ok: true,
+      mock: true,
+      commandId: null,
+      roundTripMs: 4,
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+  }
+
+  /** Shared single-response request helper used by the GUI operations. */
+  private async simpleRequest(
+    label: string,
+    main: PB.Main.$Shape,
+  ): Promise<RpcSimpleResult> {
+    const at = Date.now();
+    if (!this.transport.canTransfer() || !this.ready) {
+      return {
+        ok: false,
+        mock: false,
+        commandId: null,
+        roundTripMs: null,
+        status: null,
+        error: "Not connected to a Flipper.",
+        at,
+      };
+    }
+    const started = performance.now();
+    try {
+      const parts = await this.sendRequest(main);
+      const response = parts[0] as PB.Main | undefined;
+      const statusValue = Number(response?.commandStatus ?? 0);
+      const status = guiStatusName(statusValue);
+      const ok = statusValue === PB.CommandStatus.OK;
+      if (!ok) this.transport.logEvent("warn", `${label} failed: ${status}`);
+      return {
+        ok,
+        mock: false,
+        commandId: Number(response?.commandId ?? 0) || null,
+        roundTripMs: Math.round(performance.now() - started),
+        status,
+        error: ok ? null : `The Flipper reported ${status}.`,
+        at,
+      };
+    } catch (error) {
+      const message = describe(error);
+      this.transport.logEvent("error", `${label} failed: ${message}`);
+      return {
+        ok: false,
+        mock: false,
+        commandId: null,
+        roundTripMs: null,
+        status: null,
+        error: message,
+        at,
+      };
+    }
+  }
+
   // — internals —
 
   /** Splits a frame into characteristic-sized chunks (243 bytes max). */
