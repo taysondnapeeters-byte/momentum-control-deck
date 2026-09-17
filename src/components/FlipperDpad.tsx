@@ -45,7 +45,7 @@ function PadButton({
 }: {
   flipperKey: FlipperInputKey;
   label: string;
-  onInput: (key: FlipperInputKey, gesture: PadGesture) => void;
+  onInput: (key: FlipperInputKey, gesture: PadGesture) => void | Promise<void>;
   disabled: boolean;
   className?: string;
   children: ReactNode;
@@ -53,7 +53,7 @@ function PadButton({
   const held = useRef(false);
   const isHold = useRef(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const log = (type: string) =>
     console.log(
