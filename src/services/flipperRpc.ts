@@ -510,6 +510,7 @@ class MomentumRpc {
     }
 
     this.pending.delete(id);
+    this.completedRxHex.set(id, pending.rxHex.join("  "));
     pending.resolve(pending.parts);
   }
 
