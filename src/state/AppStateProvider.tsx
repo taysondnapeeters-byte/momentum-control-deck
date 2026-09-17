@@ -14,6 +14,7 @@ import type { DeckButton, DeckConfig } from "@/types/deck";
 import { DEFAULT_SETTINGS, type AppSettings, type ThemeMode } from "@/types/settings";
 import type {
   BleSnapshot,
+  KnownDevicesLookup,
   RpcDeviceInfoResult,
   RpcPingResult,
   RpcPowerInfoResult,
@@ -58,6 +59,8 @@ interface AppStateValue {
   /** Explicit reconnect to a previously permitted device, where supported. */
   reconnectSupported: boolean;
   knownDevices: { id: string; name: string | null }[];
+  /** Exact outcome of the last getDevices() lookup, for transparent UI. */
+  knownDevicesLookup: KnownDevicesLookup | null;
   reconnectFlipper: (id: string) => Promise<void>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
@@ -101,6 +104,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
   const [reconnectSupported, setReconnectSupported] = useState(false);
   const [knownDevices, setKnownDevices] = useState<{ id: string; name: string | null }[]>([]);
+  const [knownDevicesLookup, setKnownDevicesLookup] = useState<KnownDevicesLookup | null>(null);
 
   useEffect(() => {
     setBluetoothSupported(transport.isSupported());
@@ -114,16 +118,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Previously permitted devices. This never prompts and never connects.
+  // It re-runs after a successful connection and after disconnection so the
+  // UI always reflects the browser's latest answer.
   useEffect(() => {
     let cancelled = false;
     setReconnectSupported(transport.supportsReconnect());
-    void transport.listKnownDevices().then((devices) => {
-      if (!cancelled) setKnownDevices(devices);
+    void transport.listKnownDevices().then((lookup) => {
+      if (cancelled) return;
+      setKnownDevicesLookup(lookup);
+      setKnownDevices(lookup.devices);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [ble.state]);
 
   // A lost connection stops the browser cleanly; the path is kept.
   useEffect(() => {
@@ -421,6 +429,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       closeStorageFile: () => setSelectedFile(null),
       reconnectSupported,
       knownDevices,
+      knownDevicesLookup,
       reconnectFlipper: async (id) => {
         try {
           await transport.reconnect(id);
@@ -503,6 +512,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       selectedFile,
       reconnectSupported,
       knownDevices,
+      knownDevicesLookup,
     ],
   );
 

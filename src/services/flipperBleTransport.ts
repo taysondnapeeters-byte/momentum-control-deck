@@ -18,6 +18,7 @@ import type {
   DiagnosticReport,
   DiscoveryReport,
   FlipperBleTransport,
+  KnownDevicesLookup,
 } from "./index";
 
 /**
@@ -202,17 +203,34 @@ class MomentumBleTransport implements FlipperBleTransport {
 
   /**
    * Devices the user already permitted in this browser profile. Chrome-only
-   * and can be disabled, so the caller must handle an empty list.
+   * and can be disabled. Reports the exact outcome (unavailable / empty /
+   * found / error) and logs it, so the UI never has to guess.
    */
-  async listKnownDevices(): Promise<{ id: string; name: string | null }[]> {
+  async listKnownDevices(): Promise<KnownDevicesLookup> {
+    this.addLog("info", "Bluetooth known-device lookup started");
     const bluetooth = typeof navigator !== "undefined" ? navigator.bluetooth : undefined;
-    if (!bluetooth?.getDevices) return [];
+    if (!bluetooth?.getDevices) {
+      this.addLog("info", "Bluetooth getDevices available: false");
+      return { status: "unavailable", devices: [], error: null };
+    }
+    this.addLog("info", "Bluetooth getDevices available: true");
     try {
       const devices = await bluetooth.getDevices();
-      return devices.map((d) => ({ id: d.id, name: d.name ?? null }));
+      this.addLog("info", `Bluetooth getDevices returned: ${devices.length}`);
+      const mapped = devices.map((d) => ({ id: d.id, name: d.name ?? null }));
+      for (const d of mapped) {
+        this.addLog("info", `Bluetooth known device: ${d.name ?? "(unnamed)"}`);
+      }
+      return {
+        status: mapped.length > 0 ? "found" : "empty",
+        devices: mapped,
+        error: null,
+      };
     } catch (error) {
-      this.addLog("warn", `Known device lookup failed: ${describeError(error)}`);
-      return [];
+      const name = error instanceof Error ? error.name : "Error";
+      const message = error instanceof Error ? error.message : String(error);
+      this.addLog("warn", `Bluetooth getDevices error: ${name}: ${message}`);
+      return { status: "error", devices: [], error: `${name}: ${message}` };
     }
   }
 
