@@ -119,6 +119,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       ble,
       connection: ble.state,
       bluetoothSupported,
+      rpc: rpcState,
+      pingFlipper: async () => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockPing();
+        try {
+          return await rpc.ping();
+        } catch (error) {
+          console.error("RPC ping failed", error);
+          return rpc.getSnapshot().lastPing ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            roundTripMs: null,
+            payload: null,
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+          };
+        }
+      },
       connectFlipper: async () => {
         try {
           await transport.connect();
