@@ -49,6 +49,25 @@ const MOCK_FILE_NAME = "momentum-demo.txt";
 const MOCK_FILE_BYTES = new TextEncoder().encode(
   "Mock file — simulated contents.\nNo Flipper was contacted and nothing was transmitted.\n",
 );
+
+/** Mock-mode only: a tiny simulated tree so navigation can be exercised. */
+const MOCK_TREE: Record<string, StorageListEntry[]> = {
+  "/ext": [
+    { type: "dir", name: "infrared", size: 0, md5sum: null },
+    { type: "dir", name: "subghz", size: 0, md5sum: null },
+    { type: "dir", name: "nfc", size: 0, md5sum: null },
+    { type: "dir", name: "badusb", size: 0, md5sum: null },
+    { type: "file", name: MOCK_FILE_NAME, size: MOCK_FILE_BYTES.length, md5sum: null },
+  ],
+  "/ext/infrared": [
+    { type: "dir", name: "tv", size: 0, md5sum: null },
+    { type: "file", name: "demo.ir", size: 512, md5sum: null },
+  ],
+  "/ext/infrared/tv": [{ type: "file", name: "samsung.ir", size: 256, md5sum: null }],
+  "/ext/subghz": [{ type: "file", name: "demo.sub", size: 384, md5sum: null }],
+  "/ext/nfc": [{ type: "file", name: "demo.nfc", size: 192, md5sum: null }],
+  "/ext/badusb": [],
+};
 const PING_PAYLOAD = "Momentum Deck Ping";
 
 function toHex(bytes: Uint8Array): string {
@@ -619,13 +638,7 @@ class MomentumRpc {
       commandId: ++this.commandId,
       path,
       roundTripMs: 24,
-      entries: [
-        { type: "dir", name: "infrared", size: 0, md5sum: null },
-        { type: "dir", name: "subghz", size: 0, md5sum: null },
-        { type: "dir", name: "nfc", size: 0, md5sum: null },
-        { type: "dir", name: "badusb", size: 0, md5sum: null },
-        { type: "file", name: MOCK_FILE_NAME, size: MOCK_FILE_BYTES.length, md5sum: null },
-      ],
+      entries: MOCK_TREE[path] ?? [],
       txHex: "(mock — nothing was transmitted)",
       rxHex: "(mock — nothing was received)",
       status: "OK",
