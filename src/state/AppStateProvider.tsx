@@ -193,7 +193,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setSettings(DEFAULT_SETTINGS);
       },
     }),
-    [ready, deck, settings, ble, bluetoothSupported, persistDeck, persistSettings],
+    [ready, deck, settings, ble, rpcState, bluetoothSupported, persistDeck, persistSettings],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
