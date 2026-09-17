@@ -17,6 +17,11 @@ import { PB } from "@/proto/flipper_pb.js";
 import type {
   CharacteristicKey,
   FlipperBleTransport,
+  FlipperInputAction,
+  FlipperInputKey,
+  RpcSimpleResult,
+  ScreenFrameEvent,
+  ScreenOrientation,
   RpcDeviceInfoEntry,
   RpcDeviceInfoResult,
   RpcPingResult,
