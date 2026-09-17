@@ -1,6 +1,13 @@
 import { Panel } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
-import type { BleLogEntry, BleRawEntry, CharacteristicInfo, DiscoveryReport } from "@/services";
+import type {
+  BleLogEntry,
+  BleRawEntry,
+  CharacteristicInfo,
+  DiagnosticReport,
+  DiscoveryReport,
+} from "@/services";
+import { MOMENTUM_SERIAL_SERVICE } from "@/services/flipperBleTransport";
 
 function formatTime(at: number): string {
   const d = new Date(at);
