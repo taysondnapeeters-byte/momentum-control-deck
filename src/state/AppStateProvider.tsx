@@ -113,6 +113,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return rpc.subscribe(setRpcState);
   }, []);
 
+  // Previously permitted devices. This never prompts and never connects.
+  useEffect(() => {
+    let cancelled = false;
+    setReconnectSupported(transport.supportsReconnect());
+    void transport.listKnownDevices().then((devices) => {
+      if (!cancelled) setKnownDevices(devices);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A lost connection stops the browser cleanly; the path is kept.
+  useEffect(() => {
+    if (ble.state === "connected") return;
+    setStorageLoading(false);
+    setStorageReadLoading(false);
+  }, [ble.state]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
