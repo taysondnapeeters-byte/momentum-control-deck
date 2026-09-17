@@ -1,12 +1,85 @@
 /**
- * Architecture placeholders for the hardware / AI layer.
+ * Hardware / AI service contracts.
  *
- * These are TYPE-ONLY contracts. No implementation exists in this phase and the
- * UI must never import a concrete transport directly — it talks to app state,
- * app state will later talk to these services.
+ * Phase 2 implements only the BLE transport (see `flipperBleTransport.ts`).
+ * Everything else below stays a type-only placeholder.
  */
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+/** Explicit connection lifecycle. Never a boolean. */
+export type ConnectionState =
+  | "disconnected"
+  | "requesting"
+  | "connecting"
+  | "discovering"
+  | "connected"
+  | "disconnecting"
+  | "error";
+
+/** Kept for existing imports. */
+export type ConnectionStatus = ConnectionState;
+
+export type CharacteristicKey = "tx" | "rx" | "flowControl" | "rpcStatus";
+
+export interface CharacteristicProps {
+  read: boolean;
+  write: boolean;
+  writeWithoutResponse: boolean;
+  notify: boolean;
+  indicate: boolean;
+}
+
+export interface CharacteristicInfo {
+  key: CharacteristicKey;
+  label: string;
+  uuid: string;
+  found: boolean;
+  /** Only present when the characteristic was actually discovered. */
+  properties: CharacteristicProps | null;
+  notifying: boolean;
+  error: string | null;
+}
+
+export interface DiscoveryReport {
+  serviceFound: boolean;
+  characteristics: CharacteristicInfo[];
+}
+
+export interface BleLogEntry {
+  id: string;
+  at: number;
+  level: "info" | "warn" | "error";
+  message: string;
+}
+
+export interface BleRawEntry {
+  id: string;
+  at: number;
+  source: CharacteristicKey;
+  hex: string;
+  byteLength: number;
+}
+
+export interface BleSnapshot {
+  state: ConnectionState;
+  deviceName: string | null;
+  gattConnected: boolean;
+  error: string | null;
+  discovery: DiscoveryReport | null;
+  log: BleLogEntry[];
+  raw: BleRawEntry[];
+}
+
+export interface FlipperBleTransport {
+  isSupported(): boolean;
+  getSnapshot(): BleSnapshot;
+  subscribe(listener: (snapshot: BleSnapshot) => void): () => void;
+  /** Opens the browser chooser, connects, discovers and subscribes. */
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  clearLogs(): void;
+  /** Reserved for the next phase; unused while transport is being validated. */
+  write(data: Uint8Array): Promise<void>;
+}
 
 export interface FlipperCapabilities {
   subGhz: boolean;
@@ -19,14 +92,6 @@ export interface FlipperCapabilities {
   storage: boolean;
 }
 
-export interface FlipperBleTransport {
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  send(data: Uint8Array): Promise<void>;
-  onData(handler: (data: Uint8Array) => void): () => void;
-  readonly isConnected: boolean;
-}
-
 export interface FlipperCli {
   exec(command: string): Promise<string>;
 }
@@ -36,7 +101,7 @@ export interface FlipperRpc {
 }
 
 export interface FlipperDevice {
-  readonly status: ConnectionStatus;
+  readonly status: ConnectionState;
   readonly capabilities: FlipperCapabilities | null;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
