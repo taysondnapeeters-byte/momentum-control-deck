@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Undo2 } from "lucide-react";
-import { toast } from "sonner";
+import { useCallback, useState } from "react";
 
 import { Panel, PageShell, StatusPill } from "@/components/PageShell";
+import { FlipperDpad } from "@/components/FlipperDpad";
+import { FlipperScreen } from "@/components/FlipperScreen";
+import { useScreenStream } from "@/hooks/useScreenStream";
+import { useAppState } from "@/state/AppStateProvider";
 
 export const Route = createFileRoute("/virtual-flipper")({
   head: () => ({
@@ -10,86 +13,115 @@ export const Route = createFileRoute("/virtual-flipper")({
       { title: "Virtual Flipper — Momentum Deck" },
       {
         name: "description",
-        content: "On-screen Flipper Zero control pad, awaiting hardware integration.",
+        content:
+          "Live Flipper Zero screen stream with touch controls for the D-pad, OK and Back.",
       },
       { property: "og:title", content: "Virtual Flipper — Momentum Deck" },
       {
         property: "og:description",
-        content: "On-screen Flipper Zero control pad, awaiting hardware integration.",
+        content:
+          "Live Flipper Zero screen stream with touch controls for the D-pad, OK and Back.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: VirtualFlipperPage,
 });
 
-function pending() {
-  toast("Hardware integration pending — controls are not wired up yet.");
-}
-
-function PadButton({
-  label,
-  children,
-  className = "",
-}: {
-  label: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={pending}
-      className={`tap-scale flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-surface-2 text-foreground hover:border-signal/40 ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
+const STREAM_LABEL: Record<string, string> = {
+  inactive: "Inactive",
+  starting: "Starting",
+  active: "Active",
+  stopping: "Stopping",
+  error: "Error",
+};
 
 function VirtualFlipperPage() {
+  const { connection } = useAppState();
+  const { status, error, inputError, stats, latestRef, start, stop, sendKey, mockActive } =
+    useScreenStream();
+  const [renderError, setRenderError] = useState<string | null>(null);
+
+  const onRenderError = useCallback((message: string) => setRenderError(message), []);
+
+  const active = status === "active";
+  const busy = status === "starting" || status === "stopping";
+  const connected = connection === "connected";
+  const lastAge = stats.lastAt ? Math.max(0, Math.round((Date.now() - stats.lastAt) / 100) / 10) : null;
+
   return (
-    <PageShell title="Virtual Flipper" subtitle="On-screen control pad.">
+    <PageShell title="Virtual Flipper" subtitle="Live screen and touch controls.">
       <Panel>
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">Device screen</h2>
-          <StatusPill tone="danger">Hardware integration pending</StatusPill>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone={connected ? "signal" : "muted"}>
+            {connected ? "Connected" : mockActive ? "Mock mode" : "Disconnected"}
+          </StatusPill>
+          <StatusPill tone={active ? "signal" : status === "error" ? "danger" : "muted"}>
+            Stream: {STREAM_LABEL[status]}
+          </StatusPill>
         </div>
-        <div className="mt-3 flex h-44 items-center justify-center rounded-xl border border-border bg-background">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            No signal
+        {mockActive ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Simulated screen. No Flipper was contacted and no data was transmitted.
           </p>
+        ) : null}
+        {error ? <p className="mt-3 text-xs text-destructive">{error}</p> : null}
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => void start()}
+            disabled={busy || active || (!connected && !mockActive)}
+            className="tap-scale h-11 flex-1 rounded-xl border border-signal/40 bg-signal/10 text-sm font-medium text-signal disabled:opacity-40"
+          >
+            Start screen stream
+          </button>
+          <button
+            type="button"
+            onClick={() => void stop()}
+            disabled={busy || !active}
+            className="tap-scale h-11 flex-1 rounded-xl border border-border bg-surface-2 text-sm font-medium disabled:opacity-40"
+          >
+            Stop
+          </button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          This panel stays blank on purpose. A live screen will only appear once a real device
-          is connected.
-        </p>
       </Panel>
 
       <Panel className="mt-4">
-        <div className="flex flex-col items-center gap-3">
-          <PadButton label="Up">
-            <ArrowUp className="h-6 w-6" strokeWidth={1.7} />
-          </PadButton>
-          <div className="flex items-center gap-3">
-            <PadButton label="Left">
-              <ArrowLeft className="h-6 w-6" strokeWidth={1.7} />
-            </PadButton>
-            <PadButton label="OK" className="border-signal/40 bg-signal/10 text-signal">
-              <span className="text-sm font-semibold tracking-wide">OK</span>
-            </PadButton>
-            <PadButton label="Right">
-              <ArrowRight className="h-6 w-6" strokeWidth={1.7} />
-            </PadButton>
-          </div>
-          <PadButton label="Down">
-            <ArrowDown className="h-6 w-6" strokeWidth={1.7} />
-          </PadButton>
-          <PadButton label="Back" className="w-full">
-            <Undo2 className="mr-2 h-5 w-5" strokeWidth={1.7} />
-            <span className="text-sm font-medium">Back</span>
-          </PadButton>
-        </div>
+        <FlipperScreen latestRef={latestRef} onError={onRenderError} />
+        {!active ? (
+          <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+            {status === "starting" ? "Starting stream" : "No signal"}
+          </p>
+        ) : null}
+        {renderError ? (
+          <p className="mt-2 text-xs text-destructive">Frame problem: {renderError}</p>
+        ) : null}
+      </Panel>
+
+      <Panel className="mt-4">
+        <FlipperDpad onInput={(key, action) => void sendKey(key, action)} disabled={!active} />
+        {inputError ? (
+          <p className="mt-3 text-center text-xs text-destructive">{inputError}</p>
+        ) : null}
+      </Panel>
+
+      <Panel className="mt-4">
+        <h2 className="text-sm font-medium text-muted-foreground">Stream diagnostics</h2>
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
+          <dt>Frames</dt>
+          <dd className="text-right text-foreground">{stats.frames}</dd>
+          <dt>Approx. FPS</dt>
+          <dd className="text-right text-foreground">{stats.fps}</dd>
+          <dt>Last frame</dt>
+          <dd className="text-right text-foreground">
+            {stats.lastSize ? `${stats.lastSize} B` : "—"}
+          </dd>
+          <dt>Last frame age</dt>
+          <dd className="text-right text-foreground">{lastAge === null ? "—" : `${lastAge}s`}</dd>
+          <dt>Replaced frames</dt>
+          <dd className="text-right text-foreground">{stats.dropped}</dd>
+        </dl>
       </Panel>
     </PageShell>
   );
