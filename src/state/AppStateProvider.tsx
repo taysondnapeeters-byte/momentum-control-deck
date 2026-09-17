@@ -16,6 +16,7 @@ import type {
   BleSnapshot,
   RpcDeviceInfoResult,
   RpcPingResult,
+  RpcPowerInfoResult,
   RpcSnapshot,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
@@ -37,6 +38,7 @@ interface AppStateValue {
   rpc: RpcSnapshot;
   pingFlipper: () => Promise<RpcPingResult>;
   refreshDeviceInfo: () => Promise<RpcDeviceInfoResult>;
+  refreshPowerInfo: () => Promise<RpcPowerInfoResult>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
@@ -154,6 +156,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         } catch (error) {
           console.error("Device Info failed", error);
           return rpc.getSnapshot().lastDeviceInfo ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            roundTripMs: null,
+            entries: [],
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+            at: Date.now(),
+          };
+        }
+      },
+      refreshPowerInfo: async () => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockPowerInfo();
+        try {
+          return await rpc.getPowerInfo();
+        } catch (error) {
+          console.error("Power Info failed", error);
+          return rpc.getSnapshot().lastPowerInfo ?? {
             ok: false,
             mock: false,
             commandId: null,
