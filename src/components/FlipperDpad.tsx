@@ -73,6 +73,25 @@ function PadButton({
 
   useEffect(() => clearTimers, []);
 
+  /**
+   * Self-pacing REPEAT: the next one is only scheduled after the previous send
+   * has completed, so a slow Bluetooth link repeats more slowly instead of
+   * piling events up behind later taps.
+   */
+  const scheduleRepeat = () => {
+    repeatTimer.current = setTimeout(async () => {
+      repeatTimer.current = null;
+      if (!held.current) return;
+      log("REPEAT");
+      try {
+        await onInput(flipperKey, "holdRepeat");
+      } catch {
+        // A failed repeat never stops the hold; the next tick tries again.
+      }
+      if (held.current) scheduleRepeat();
+    }, REPEAT_INTERVAL_MS);
+  };
+
   const press = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (disabled || held.current) return;
     held.current = true;
