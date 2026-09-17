@@ -51,6 +51,7 @@ function DevicePage() {
     settings,
     bluetoothSupported,
     connectFlipper,
+    runBleDiagnostic,
     disconnectFlipper,
     clearBleLogs,
     setMockMode,
