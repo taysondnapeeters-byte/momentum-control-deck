@@ -42,9 +42,23 @@ interface AppStateValue {
   pingFlipper: () => Promise<RpcPingResult>;
   refreshDeviceInfo: () => Promise<RpcDeviceInfoResult>;
   refreshPowerInfo: () => Promise<RpcPowerInfoResult>;
-  refreshStorageList: (path: string) => Promise<StorageListResult>;
   refreshStorageStat: (path: string) => Promise<StorageStatResult>;
   readStorageFile: (path: string) => Promise<StorageReadResult>;
+  /** Read-only filesystem browser state. The Flipper is the source of truth. */
+  storagePath: string;
+  storageLoading: boolean;
+  storageReadLoading: boolean;
+  storageList: StorageListResult | null;
+  selectedFile: SelectedFile | null;
+  refreshStorageList: (path?: string) => Promise<void>;
+  navigateIntoStorageDirectory: (name: string) => Promise<void>;
+  navigateBackStorageDirectory: () => Promise<void>;
+  openStorageFile: (name: string) => Promise<void>;
+  closeStorageFile: () => void;
+  /** Explicit reconnect to a previously permitted device, where supported. */
+  reconnectSupported: boolean;
+  knownDevices: { id: string; name: string | null }[];
+  reconnectFlipper: (id: string) => Promise<void>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
@@ -58,6 +72,18 @@ interface AppStateValue {
   setMockMode: (enabled: boolean) => Promise<void>;
   clearAllData: () => Promise<void>;
 }
+
+/** The one file the user explicitly opened, with its Stat and Read results. */
+export interface SelectedFile {
+  path: string;
+  name: string;
+  stat: StorageStatResult | null;
+  read: StorageReadResult | null;
+  /** Set when the file was not read because it exceeds the safety limit. */
+  tooLarge: string | null;
+}
+
+const ROOT_PATH = "/ext";
 
 const AppStateContext = createContext<AppStateValue | null>(null);
 
