@@ -127,6 +127,7 @@ class MomentumBleTransport implements FlipperBleTransport {
   private log: BleLogEntry[] = [];
   private raw: BleRawEntry[] = [];
   private listeners = new Set<(snapshot: BleSnapshot) => void>();
+  private dataListeners = new Set<(source: CharacteristicKey, bytes: Uint8Array) => void>();
   private chars = new Map<CharacteristicKey, BluetoothRemoteGATTCharacteristic>();
   private notifyHandlers = new Map<CharacteristicKey, (event: Event) => void>();
   private onGattDisconnected = () => {
@@ -341,12 +342,10 @@ class MomentumBleTransport implements FlipperBleTransport {
     if (!rx) throw new Error("The RX characteristic (FE62) was not discovered.");
     const buffer = new Uint8Array(data);
     try {
-      if (rx.properties.writeWithoutResponse && rx.writeValueWithoutResponse) {
+      if (rx.properties.writeWithoutResponse) {
         await rx.writeValueWithoutResponse(buffer);
-      } else if (rx.writeValueWithResponse) {
-        await rx.writeValueWithResponse(buffer);
       } else {
-        await rx.writeValue(buffer);
+        await rx.writeValueWithResponse(buffer);
       }
     } catch (error) {
       throw new Error(`Bluetooth write failed: ${describeError(error)}`);
