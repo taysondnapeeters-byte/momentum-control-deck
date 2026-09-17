@@ -55,6 +55,8 @@ class MomentumRpc {
   private commandId = 0;
   private busy = false;
   private lastPing: RpcPingResult | null = null;
+  /** Hex of the most recently decoded incoming frame, for diagnostics. */
+  private lastRxHex: string | null = null;
   private ready = false;
   private listeners = new Set<(snapshot: RpcSnapshot) => void>();
 
@@ -286,6 +288,7 @@ class MomentumRpc {
       const total = header.bytesRead + header.value;
       if (this.buffer.length < total) return; // message body still incomplete
       const body = this.buffer.subarray(header.bytesRead, total);
+      this.lastRxHex = toHex(this.buffer.subarray(0, total));
       this.buffer = this.buffer.slice(total);
       let message: PB.Main;
       try {
