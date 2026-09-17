@@ -232,7 +232,7 @@ class MomentumBleTransport implements FlipperBleTransport {
       } catch (error) {
         this.addLog("error", `getPrimaryService(FE60) original error — ${describeOriginalError(error)}`);
         throw new Error(
-          `Momentum Serial Service (FE60) could not be discovered: ${describeError(error)}`,
+          `Momentum Serial Service (FE60) could not be discovered. Original error: ${describeOriginalError(error)}`,
         );
       }
       discovery.serviceFound = true;
