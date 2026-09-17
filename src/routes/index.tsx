@@ -1,24 +1,166 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { Check, ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
+import { ACCENT_CLASSES, DeckIcon } from "@/components/DeckIcon";
+import { DeckButtonEditor } from "@/components/DeckButtonEditor";
+import { PageShell, Panel, StatusPill } from "@/components/PageShell";
+import { Button } from "@/components/ui/button";
+import { useAppState } from "@/state/AppStateProvider";
+import type { DeckButton } from "@/types/deck";
+
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "Momentum Deck — Flipper Zero control deck" },
+      {
+        name: "description",
+        content:
+          "A mobile-first control deck for a Flipper Zero running Momentum Firmware. Build and organise your button deck.",
+      },
+      { property: "og:title", content: "Momentum Deck — Flipper Zero control deck" },
+      {
+        property: "og:description",
+        content:
+          "A mobile-first control deck for a Flipper Zero running Momentum Firmware. Build and organise your button deck.",
+      },
+    ],
+  }),
+  component: DeckPage,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+function DeckPage() {
+  const { deck, upsertButton, removeButton, moveButton } = useAppState();
+  const [editMode, setEditMode] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<DeckButton | null>(null);
+
+  const openEditor = (button: DeckButton | null) => {
+    setEditing(button);
+    setEditorOpen(true);
+  };
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
+    <PageShell
+      title="Deck"
+      subtitle={editMode ? "Reorder, edit or remove your buttons." : "Your control surface."}
+      action={
+        <Button
+          variant={editMode ? "default" : "secondary"}
+          className="h-11 shrink-0 rounded-xl"
+          onClick={() => setEditMode((v) => !v)}
+        >
+          {editMode ? (
+            <>
+              <Check className="mr-1.5 h-4 w-4" /> Done
+            </>
+          ) : (
+            <>
+              <Pencil className="mr-1.5 h-4 w-4" /> Edit Deck
+            </>
+          )}
+        </Button>
+      }
     >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
+      <div className="mb-4">
+        <StatusPill>
+          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+          Buttons are examples — nothing is sent yet
+        </StatusPill>
+      </div>
+
+      {deck.buttons.length === 0 ? (
+        <Panel className="py-12 text-center text-sm text-muted-foreground">
+          Your deck is empty. Add your first button below.
+        </Panel>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {deck.buttons.map((button, index) => (
+            <div
+              key={button.id}
+              className="relative flex flex-col rounded-2xl border border-border bg-surface p-3 shadow-sm"
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  editMode
+                    ? openEditor(button)
+                    : toast(`"${button.label}" is a UI example and does not run anything yet.`)
+                }
+                className="tap-scale flex min-h-[92px] flex-1 flex-col items-center justify-center gap-2 rounded-xl"
+              >
+                <span className={ACCENT_CLASSES[button.accent]}>
+                  <DeckIcon icon={button.icon} />
+                </span>
+                <span className="text-center text-sm font-medium tracking-wide">
+                  {button.label}
+                </span>
+              </button>
+
+              {editMode ? (
+                <div className="mt-2 flex items-center justify-between gap-1 border-t border-border pt-2">
+                  <button
+                    type="button"
+                    aria-label={`Move ${button.label} earlier`}
+                    disabled={index === 0}
+                    onClick={() => moveButton(button.id, -1)}
+                    className="tap-scale flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground disabled:opacity-30"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Edit ${button.label}`}
+                    onClick={() => openEditor(button)}
+                    className="tap-scale flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${button.label}`}
+                    onClick={() => removeButton(button.id)}
+                    className="tap-scale flex h-9 w-9 items-center justify-center rounded-lg text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${button.label} later`}
+                    disabled={index === deck.buttons.length - 1}
+                    onClick={() => moveButton(button.id, 1)}
+                    className="tap-scale flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground disabled:opacity-30"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editMode ? (
+        <Button
+          variant="secondary"
+          className="mt-4 h-12 w-full rounded-xl"
+          onClick={() => openEditor(null)}
+        >
+          <Plus className="mr-2 h-5 w-5" /> Add button
+        </Button>
+      ) : null}
+
+      <DeckButtonEditor
+        open={editorOpen}
+        button={editing}
+        onOpenChange={setEditorOpen}
+        onSave={async (next) => {
+          await upsertButton(next);
+          setEditorOpen(false);
+          toast.success("Button saved.");
+        }}
       />
-    </div>
+    </PageShell>
   );
 }
