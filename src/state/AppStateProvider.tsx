@@ -27,6 +27,7 @@ interface AppStateValue {
   connection: BleSnapshot["state"];
   bluetoothSupported: boolean;
   connectFlipper: () => Promise<void>;
+  runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
   clearBleLogs: () => void;
   saveDeck: (next: DeckConfig) => Promise<void>;
@@ -112,6 +113,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           await transport.connect();
         } catch (error) {
           console.error("Bluetooth connection failed", error);
+        }
+      },
+      runBleDiagnostic: async () => {
+        try {
+          await transport.runDiagnostic();
+        } catch (error) {
+          console.error("Bluetooth diagnostic failed", error);
         }
       },
       disconnectFlipper: async () => {
