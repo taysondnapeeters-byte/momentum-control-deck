@@ -19,6 +19,8 @@ import type {
   RpcPowerInfoResult,
   RpcSnapshot,
   StorageListResult,
+  StorageReadResult,
+  StorageStatResult,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
 import { getFlipperRpc } from "@/services/flipperRpc";
@@ -41,6 +43,8 @@ interface AppStateValue {
   refreshDeviceInfo: () => Promise<RpcDeviceInfoResult>;
   refreshPowerInfo: () => Promise<RpcPowerInfoResult>;
   refreshStorageList: (path: string) => Promise<StorageListResult>;
+  refreshStorageStat: (path: string) => Promise<StorageStatResult>;
+  readStorageFile: (path: string) => Promise<StorageReadResult>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
