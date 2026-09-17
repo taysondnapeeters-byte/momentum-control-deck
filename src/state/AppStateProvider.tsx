@@ -18,6 +18,7 @@ import type {
   RpcPingResult,
   RpcPowerInfoResult,
   RpcSnapshot,
+  StorageListResult,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
 import { getFlipperRpc } from "@/services/flipperRpc";
