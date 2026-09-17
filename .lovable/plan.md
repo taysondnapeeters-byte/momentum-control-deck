@@ -16,7 +16,9 @@ the Flipper.
      hardware colour enum Unknown/Black/White/Transparent).
    - Defensive candidates: `0x3084`–`0x308F`, explicitly labelled unverified /
      forward-compatible — not known Momentum values.
-   Plus a name-prefix match on "Flipper" as a secondary filter. No other UUIDs are added.
+   Plus an alternative discovery filter: `namePrefix: "Flipper"`. Web Bluetooth OR-filters
+   across filter objects, so the name prefix is an additional way to be found, not a
+   requirement combined with the service values. No other UUIDs are added.
    Web Bluetooth has no wildcard matching, so enumerating these concrete values is the
    closest standards-compliant equivalent; the Device page states this limitation in plain
    text.
