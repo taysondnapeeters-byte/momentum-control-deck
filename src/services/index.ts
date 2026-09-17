@@ -95,8 +95,14 @@ export interface FlipperBleTransport {
   runDiagnostic(): Promise<void>;
   disconnect(): Promise<void>;
   clearLogs(): void;
-  /** Reserved for the next phase; unused while transport is being validated. */
+  /** Raw bytes received from a notifying characteristic (TX, Flow Control). */
+  onData(listener: (source: CharacteristicKey, bytes: Uint8Array) => void): () => void;
+  /** Appends an entry to the shared connection log (used by upper layers). */
+  logEvent(level: BleLogEntry["level"], message: string): void;
+  /** Writes a single chunk to the RX characteristic. Chunking is the caller's job. */
   write(data: Uint8Array): Promise<void>;
+  /** True when connected and the RX/TX characteristics are usable. */
+  canTransfer(): boolean;
 }
 
 export interface FlipperCapabilities {
