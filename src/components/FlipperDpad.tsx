@@ -27,10 +27,13 @@ const FLIPPER_KEYS: Record<FlipperInputKey, number> = {
 };
 
 /** Gestures the pad reports to the stream hook. */
-export type PadGesture = "tap" | "holdStart" | "holdRelease";
+export type PadGesture = "tap" | "holdStart" | "holdRepeat" | "holdRelease";
 
-/** Press longer than this and the gesture becomes a hold (PRESS/RELEASE). */
+/** Press longer than this and the gesture becomes a hold (LONG/REPEAT/RELEASE). */
 const HOLD_THRESHOLD_MS = 400;
+
+/** Cadence of synthesized REPEAT events while a control stays held. */
+const REPEAT_INTERVAL_MS = 150;
 
 function PadButton({
   flipperKey,
