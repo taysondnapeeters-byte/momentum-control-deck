@@ -555,6 +555,182 @@ class MomentumRpc {
     });
   }
 
+  /** Simulated directory listing. Always labelled as mock; never real data. */
+  mockStorageList(path: string): StorageListResult {
+    const result: StorageListResult = {
+      ok: true,
+      mock: true,
+      commandId: ++this.commandId,
+      path,
+      roundTripMs: 24,
+      entries: [
+        { type: "dir", name: "infrared", size: 0, md5sum: null },
+        { type: "dir", name: "subghz", size: 0, md5sum: null },
+        { type: "dir", name: "nfc", size: 0, md5sum: null },
+        { type: "dir", name: "badusb", size: 0, md5sum: null },
+      ],
+      txHex: "(mock — nothing was transmitted)",
+      rxHex: "(mock — nothing was received)",
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+    this.lastStorageList = result;
+    this.transport.logEvent("info", "Mock Storage List — simulated, no Flipper involved");
+    this.emit();
+    return result;
+  }
+
+  /**
+   * Read-only Storage List. The Flipper answers with a stream of
+   * `storage_list_response` messages sharing one command ID; each carries a
+   * batch of `File` entries and the last one has `has_next = false`.
+   */
+  async listStorage(path: string): Promise<StorageListResult> {
+    const log = this.transport.logEvent.bind(this.transport);
+
+    if (!this.transport.canTransfer() || !this.ready) {
+      const message =
+        this.transport.getSnapshot().state === "connected"
+          ? "RPC is not ready — the TX/RX characteristics are not usable."
+          : "Not connected to a Flipper.";
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, path, error: message });
+    }
+
+    const invalid = validateStoragePath(path);
+    if (invalid) {
+      log("error", `Storage List failed: ${invalid}`);
+      return this.finishStorageList({ ok: false, path, error: invalid });
+    }
+
+    const commandId = ++this.commandId;
+    log("info", "Storage List request created");
+    log("info", `Storage List path: ${path}`);
+    log("info", `Storage List command ID: ${commandId}`);
+
+    let frame: Uint8Array;
+    try {
+      frame = PB.Main.encodeDelimited({
+        commandId,
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        storageListRequest: { path },
+      }).finish();
+    } catch (error) {
+      const message = `Protobuf encode failed: ${describe(error)}`;
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, commandId, path, error: message });
+    }
+
+    const txHex = toHex(frame);
+    log("info", `Storage List TX bytes: ${txHex}`);
+
+    const started = performance.now();
+    const waiter = this.track(commandId, started, REQUEST_TIMEOUT_MS, "Storage List timeout");
+
+    try {
+      await this.writeFramed(frame);
+    } catch (error) {
+      this.clearPending(commandId);
+      const message = describe(error);
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    let parts: PB.Main[];
+    try {
+      parts = await waiter;
+    } catch (error) {
+      const message = describe(error);
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    const roundTripMs = Math.round(performance.now() - started);
+    const rxHex = this.completedRxHex.get(commandId) ?? null;
+    this.completedRxHex.delete(commandId);
+    log("info", "Storage List response received");
+
+    const first = parts[0] as PB.Main;
+    const status = statusName(first.commandStatus);
+    log("info", `Storage List response command ID: ${first.commandId}`);
+    log("info", `Storage List response status: ${status}`);
+
+    const mismatched = parts.find((part) => Number(part.commandId ?? 0) !== commandId);
+    if (mismatched) {
+      const message = "Storage List response command ID mismatch";
+      log("error", message);
+      return this.finishStorageList({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: message,
+      });
+    }
+
+    const failed = parts.find((part) => (part.commandStatus ?? 0) !== PB.CommandStatus.OK);
+    if (failed) {
+      const failedStatus = statusName(failed.commandStatus);
+      const message = storageStatusMessage(failedStatus);
+      log("error", `Storage List failed: ${message} (${failedStatus})`);
+      return this.finishStorageList({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status: failedStatus,
+        error: message,
+      });
+    }
+
+    const entries: StorageListEntry[] = [];
+    for (const part of parts) {
+      const listing = part.storageListResponse;
+      if (!listing) {
+        const message = "Storage List unexpected response type";
+        log("error", message);
+        return this.finishStorageList({
+          ok: false,
+          commandId,
+          path,
+          txHex,
+          rxHex,
+          roundTripMs,
+          status,
+          error: "The Flipper answered with something other than a directory listing.",
+        });
+      }
+      log("info", `Storage List decoded response part (has_next: ${part.hasNext ? "true" : "false"})`);
+      for (const file of listing.file ?? []) {
+        entries.push({
+          type: file.type === PB_Storage_DIR ? "dir" : "file",
+          name: file.name ?? "",
+          size: Number(file.size ?? 0),
+          md5sum: file.md5sum ? file.md5sum : null,
+        });
+      }
+    }
+
+    log("info", "Storage List decoded successfully");
+    log("info", `Storage List entries: ${entries.length}`);
+    return this.finishStorageList({
+      ok: true,
+      commandId,
+      path,
+      txHex,
+      rxHex,
+      roundTripMs,
+      status,
+      entries,
+    });
+  }
 
   /**
    * Generic request path. Kept small and reusable so later phases can send
