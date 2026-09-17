@@ -23,6 +23,8 @@ import type {
   RpcPowerInfoEntry,
   RpcPowerInfoResult,
   RpcSnapshot,
+  StorageListEntry,
+  StorageListResult,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
 
