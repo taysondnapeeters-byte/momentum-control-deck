@@ -159,9 +159,13 @@ export function useScreenStream() {
    * qFlipper approach — menus listen for SHORT, and RPC input bypasses the
    * hardware timer that would normally synthesize it). A hold sends LONG when
    * the threshold is crossed, REPEAT on a cadence while held, and RELEASE on
-   * pointer up. Sends are serialized so events never arrive out of order.
+   * pointer up. Sends are serialized so events never arrive out of order, but
+   * the queue is never allowed to starve a later tap: REPEAT is dropped while
+   * another event is in flight, and a send that outlives the RPC timeout
+   * window is abandoned so the chain starts clean again.
    */
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const inFlightRef = useRef(false);
   const sendKey = useCallback(
     async (key: FlipperInputKey, gesture: PadGesture) => {
       const action: FlipperInputAction =
