@@ -429,6 +429,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       closeStorageFile: () => setSelectedFile(null),
       reconnectSupported,
       knownDevices,
+      knownDevicesLookup,
       reconnectFlipper: async (id) => {
         try {
           await transport.reconnect(id);
