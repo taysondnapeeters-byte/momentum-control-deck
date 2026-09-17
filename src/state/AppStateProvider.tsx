@@ -23,7 +23,7 @@ import type {
   StorageStatResult,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
-import { getFlipperRpc } from "@/services/flipperRpc";
+import { getFlipperRpc, MAX_READ_BYTES } from "@/services/flipperRpc";
 
 const transport = getFlipperBleTransport();
 const rpc = getFlipperRpc();
@@ -94,6 +94,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [ble, setBle] = useState<BleSnapshot>(() => transport.getSnapshot());
   const [bluetoothSupported, setBluetoothSupported] = useState(false);
   const [rpcState, setRpcState] = useState<RpcSnapshot>(() => rpc.getSnapshot());
+  const [storagePath, setStoragePath] = useState<string>(ROOT_PATH);
+  const [storageList, setStorageList] = useState<StorageListResult | null>(null);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageReadLoading, setStorageReadLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+  const [reconnectSupported, setReconnectSupported] = useState(false);
+  const [knownDevices, setKnownDevices] = useState<{ id: string; name: string | null }[]>([]);
 
   useEffect(() => {
     setBluetoothSupported(transport.isSupported());
