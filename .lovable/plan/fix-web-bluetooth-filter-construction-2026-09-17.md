@@ -9,8 +9,8 @@ Only the filter object shape changes. No architecture, discovery strategy, UUID 
 
 ## What changes
 
-1. **`src/services/flipperBleTransport.ts` — `connect()` filters**
-   Each service filter becomes `{ services: [uuid] }`. The exact final construction:
+1. `**src/services/flipperBleTransport.ts` — `connect()` filters**
+  Each service filter becomes `{ services: [uuid] }`. The exact final construction:
 
 ```ts
 device = await navigator.bluetooth!.requestDevice({
@@ -32,8 +32,8 @@ device = await navigator.bluetooth!.requestDevice({
 
    Verified values 0x3080–0x3083 and unverified 0x3084–0x308F keep their existing lists and the same OR semantics between filter objects.
 
-2. **`src/types/web-bluetooth.d.ts` — prevent recurrence**
-   Narrow `services` in the `filters` entry of `RequestDeviceOptions` from `string | string[]` to `string[]`, so TypeScript rejects a scalar in any future filter.
+2. src/types/web-bluetooth.d.ts — prevent recurrence
+  Ensure the services property in the local RequestDeviceOptions type is an array/sequence type compatible with Web Bluetooth's BluetoothServiceUUID[], rather than a scalar string. Do not unnecessarily narrow valid Bluetooth service UUID aliases such as numeric 16-bit/32-bit values if the project types support them.
 
 ## Unchanged
 
