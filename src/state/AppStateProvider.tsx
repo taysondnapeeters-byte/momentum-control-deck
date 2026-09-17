@@ -142,7 +142,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         ]);
         if (cancelled) return;
         if (storedDeck?.buttons) setDeck(storedDeck);
-        if (storedSettings) setSettings({ ...DEFAULT_SETTINGS, ...storedSettings });
+        if (storedSettings) {
+          const merged = { ...DEFAULT_SETTINGS, ...storedSettings };
+          setSettings(merged);
+          // Display only — no Storage RPC is issued until the user asks.
+          setStoragePath(merged.lastStoragePath || ROOT_PATH);
+        }
       } catch (error) {
         console.error("Local data could not be loaded", error);
       } finally {
