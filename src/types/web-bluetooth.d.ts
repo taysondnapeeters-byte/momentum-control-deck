@@ -52,9 +52,13 @@ declare global {
   }
 
   interface RequestDeviceOptions {
-    /** Per spec, `services` accepts a single UUID or a list. */
+    /**
+     * Per the accepted Web Bluetooth behaviour in Chromium, `services`
+     * must be a sequence — a scalar string is rejected with
+     * "cannot be converted to a sequence".
+     */
     filters?: Array<{
-      services?: string | string[];
+      services?: string[];
       name?: string;
       namePrefix?: string;
     }>;
