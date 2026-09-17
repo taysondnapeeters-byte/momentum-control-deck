@@ -120,8 +120,30 @@ export interface FlipperCli {
   exec(command: string): Promise<string>;
 }
 
+/** Outcome of a single System Ping round trip. `mock` is never hidden. */
+export interface RpcPingResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  roundTripMs: number | null;
+  payload: string | null;
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+}
+
+export interface RpcSnapshot {
+  ready: boolean;
+  busy: boolean;
+  lastPing: RpcPingResult | null;
+}
+
 export interface FlipperRpc {
-  request<TRequest, TResponse>(method: string, payload: TRequest): Promise<TResponse>;
+  isReady(): boolean;
+  getSnapshot(): RpcSnapshot;
+  subscribe(listener: (snapshot: RpcSnapshot) => void): () => void;
+  ping(): Promise<RpcPingResult>;
 }
 
 export interface FlipperDevice {
