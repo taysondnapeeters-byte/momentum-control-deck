@@ -14,6 +14,8 @@ import { Route as AiRouteImport } from './routes/ai'
 import { Route as DeviceRouteImport } from './routes/device'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as GeoRouteImport } from './routes/geo'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as VirtualFlipperRouteImport } from './routes/virtual-flipper'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +42,16 @@ const GeoRoute = GeoRouteImport.update({
   path: '/geo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VirtualFlipperRoute = VirtualFlipperRouteImport.update({
+  id: '/virtual-flipper',
+  path: '/virtual-flipper',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +59,8 @@ export interface FileRoutesByFullPath {
   '/device': typeof DeviceRoute
   '/files': typeof FilesRoute
   '/geo': typeof GeoRoute
+  '/settings': typeof SettingsRoute
+  '/virtual-flipper': typeof VirtualFlipperRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +68,8 @@ export interface FileRoutesByTo {
   '/device': typeof DeviceRoute
   '/files': typeof FilesRoute
   '/geo': typeof GeoRoute
+  '/settings': typeof SettingsRoute
+  '/virtual-flipper': typeof VirtualFlipperRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +78,37 @@ export interface FileRoutesById {
   '/device': typeof DeviceRoute
   '/files': typeof FilesRoute
   '/geo': typeof GeoRoute
+  '/settings': typeof SettingsRoute
+  '/virtual-flipper': typeof VirtualFlipperRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ai' | '/device' | '/files' | '/geo'
+  fullPaths:
+    | '/'
+    | '/ai'
+    | '/device'
+    | '/files'
+    | '/geo'
+    | '/settings'
+    | '/virtual-flipper'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/ai' | '/device' | '/files' | '/geo'
-  id: '__root__' | '/' | '/ai' | '/device' | '/files' | '/geo'
+  to:
+    | '/'
+    | '/ai'
+    | '/device'
+    | '/files'
+    | '/geo'
+    | '/settings'
+    | '/virtual-flipper'
+  id:
+    | '__root__'
+    | '/'
+    | '/ai'
+    | '/device'
+    | '/files'
+    | '/geo'
+    | '/settings'
+    | '/virtual-flipper'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +117,8 @@ export interface RootRouteChildren {
   DeviceRoute: typeof DeviceRoute
   FilesRoute: typeof FilesRoute
   GeoRoute: typeof GeoRoute
+  SettingsRoute: typeof SettingsRoute
+  VirtualFlipperRoute: typeof VirtualFlipperRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +158,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GeoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual-flipper': {
+      id: '/virtual-flipper'
+      path: '/virtual-flipper'
+      fullPath: '/virtual-flipper'
+      preLoaderRoute: typeof VirtualFlipperRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +181,8 @@ const rootRouteChildren: RootRouteChildren = {
   DeviceRoute: DeviceRoute,
   FilesRoute: FilesRoute,
   GeoRoute: GeoRoute,
+  SettingsRoute: SettingsRoute,
+  VirtualFlipperRoute: VirtualFlipperRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
