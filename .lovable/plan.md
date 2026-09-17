@@ -11,11 +11,15 @@ the Flipper.
 ## What changes
 
 1. **Advertising filter (device chooser)**
-   The chooser now matches on the advertised Momentum values instead of FE60: the full set of
-   16-bit UUIDs `0x3080` through `0x308F` (base `0x3080` with every possible colour value
-   OR-ed in), plus a name-prefix match on "Flipper" as a secondary filter. Web Bluetooth has
-   no wildcard matching, so enumerating the 16 concrete values is the closest
-   standards-compliant equivalent; the Device page states this limitation in plain text.
+   The chooser now matches on the advertised Momentum values instead of FE60:
+   - Verified values: `0x3080`, `0x3081`, `0x3082`, `0x3083` (base `0x3080` OR-ed with the
+     hardware colour enum Unknown/Black/White/Transparent).
+   - Defensive candidates: `0x3084`–`0x308F`, explicitly labelled unverified /
+     forward-compatible — not known Momentum values.
+   Plus a name-prefix match on "Flipper" as a secondary filter. No other UUIDs are added.
+   Web Bluetooth has no wildcard matching, so enumerating these concrete values is the
+   closest standards-compliant equivalent; the Device page states this limitation in plain
+   text.
 
 2. **FE60 stays, as an optional service**
    The FE60 GATT UUID is kept in the code and listed in `optionalServices`, so the browser is
@@ -46,9 +50,10 @@ notification subscription on characteristics that advertise notify/indicate.
 
 ## Technical notes
 
-- `src/services/flipperBleTransport.ts`: add `MOMENTUM_ADVERTISING_UUIDS` (0x3080–0x308F as
-  128-bit base UUID strings); `connect()` uses
-  `filters: [...advertising services, { namePrefix: "Flipper" }]` with
+- `src/services/flipperBleTransport.ts`: add `MOMENTUM_ADVERTISING_UUIDS` (verified
+  0x3080–0x3083) and `UNVERIFIED_ADVERTISING_UUIDS` (0x3084–0x308F, labelled forward-compatible
+  candidates); `connect()` uses
+  `filters: [...all advertising services, { namePrefix: "Flipper" }]` with
   `optionalServices: [MOMENTUM_SERIAL_SERVICE]`; per-characteristic log lines; FE60 failure
   surfaces `describeError(error)`; final "Connection ready" entry.
 - `src/routes/device.tsx`: short note under the Connect button explaining the advertising vs
