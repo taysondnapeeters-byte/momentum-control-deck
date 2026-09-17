@@ -8,13 +8,12 @@ import type { FlipperInputKey } from "@/services";
  * Touch controls for the six physical keys.
  *
  * RPC input bypasses the Flipper's hardware debounce timer, so the firmware
- * never synthesizes the SHORT event that menus and lists listen for. A quick
+ * never synthesizes the SHORT/LONG/REPEAT events that views listen for. A quick
  * tap therefore sends exactly one SHORT event and nothing else (the qFlipper /
- * official web app approach). Holding a control beyond HOLD_THRESHOLD_MS
- * switches to physical-press emulation: PRESS at the threshold, RELEASE on
- * pointer up — no SHORT, since none was bracketed by that PRESS.
- * onPointerLeave is intentionally NOT used: it fires false releases on touch
- * screens.
+ * official web app approach). Holding a control beyond HOLD_THRESHOLD_MS sends
+ * LONG, then REPEAT every REPEAT_INTERVAL_MS until pointer up, which sends
+ * RELEASE. onPointerLeave is intentionally NOT used: it fires false releases on
+ * touch screens.
  */
 
 /** `PB_Gui.InputKey` firmware values — mirrors INPUT_KEYS in flipperRpc.ts. */
