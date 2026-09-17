@@ -18,6 +18,7 @@ import type {
   DiagnosticReport,
   DiscoveryReport,
   FlipperBleTransport,
+  KnownDevicesLookup,
 } from "./index";
 
 /**

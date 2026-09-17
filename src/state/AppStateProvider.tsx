@@ -14,6 +14,7 @@ import type { DeckButton, DeckConfig } from "@/types/deck";
 import { DEFAULT_SETTINGS, type AppSettings, type ThemeMode } from "@/types/settings";
 import type {
   BleSnapshot,
+  KnownDevicesLookup,
   RpcDeviceInfoResult,
   RpcPingResult,
   RpcPowerInfoResult,
