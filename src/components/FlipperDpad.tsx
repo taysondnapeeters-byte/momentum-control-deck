@@ -94,7 +94,7 @@ export function FlipperDpad({
   onInput,
   disabled,
 }: {
-  onInput: (key: FlipperInputKey, action: "press" | "release") => void;
+  onInput: (key: FlipperInputKey, action: "press" | "release" | "short") => void;
   disabled: boolean;
 }) {
   const shared = { onInput, disabled };

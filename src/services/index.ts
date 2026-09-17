@@ -311,7 +311,7 @@ export interface ScreenFrameEvent {
 
 /** The six physical Flipper keys the virtual pad drives. */
 export type FlipperInputKey = "up" | "down" | "left" | "right" | "ok" | "back";
-/** Only press/release are used; the firmware also knows short/long/repeat. */
+/** The pad uses press, plus SHORT + RELEASE on pointer up (menus listen for SHORT). */
 export type FlipperInputAction = "press" | "release" | "short" | "long" | "repeat";
 
 /** Generic outcome of a simple one-response RPC request. */
