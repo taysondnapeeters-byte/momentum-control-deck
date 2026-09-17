@@ -34,6 +34,27 @@ export const MOMENTUM_CHARACTERISTICS: Array<{
   { key: "rpcStatus", label: "RPC Status", uuid: "0000fe64-8e22-4541-9d4c-21edae82ed19" },
 ];
 
+/**
+ * Momentum advertises a 16-bit service value, not the FE60 GATT UUID.
+ * Base value 0x3080, with the hardware colour enum (Unknown 0x00, Black 0x01,
+ * White 0x02, Transparent 0x03) OR-ed in.
+ */
+const SIG_BASE = "-0000-1000-8000-00805f9b34fb";
+
+/** Verified Momentum advertising service values (0x3080–0x3083). */
+export const MOMENTUM_ADVERTISING_UUIDS = [0x3080, 0x3081, 0x3082, 0x3083].map(
+  (value) => `0000${value.toString(16)}${SIG_BASE}`,
+);
+
+/**
+ * 0x3084–0x308F: UNVERIFIED, forward-compatible candidates only — not known
+ * Momentum values. Kept defensively so future colour/capability bits still match.
+ */
+export const UNVERIFIED_ADVERTISING_UUIDS = Array.from(
+  { length: 0x308f - 0x3084 + 1 },
+  (_, i) => `0000${(0x3084 + i).toString(16)}${SIG_BASE}`,
+);
+
 const MAX_LOG = 200;
 const MAX_RAW = 200;
 
@@ -136,12 +157,19 @@ class MomentumBleTransport implements FlipperBleTransport {
     this.error = null;
     this.discovery = null;
     this.setState("requesting");
-    this.addLog("info", "Bluetooth request started");
+    this.addLog("info", "Bluetooth chooser opened");
 
     let device: BluetoothDevice;
     try {
       device = await navigator.bluetooth!.requestDevice({
-        filters: [{ services: [MOMENTUM_SERIAL_SERVICE] }],
+        // Web Bluetooth OR-filters across filter objects: any advertised
+        // Momentum value OR a "Flipper" name prefix matches.
+        filters: [
+          ...[...MOMENTUM_ADVERTISING_UUIDS, ...UNVERIFIED_ADVERTISING_UUIDS].map(
+            (uuid) => ({ services: uuid }),
+          ),
+          { namePrefix: "Flipper" },
+        ],
         optionalServices: [MOMENTUM_SERIAL_SERVICE],
       });
     } catch (error) {
@@ -160,20 +188,27 @@ class MomentumBleTransport implements FlipperBleTransport {
       await gatt.connect();
       this.addLog("info", "GATT connected");
 
+      // Log the advertising profile only when the browser can actually confirm
+      // it (via watchAdvertisements). Not all browsers support this; when they
+      // do not, the entry is simply not logged.
+      const detected = await this.detectAdvertising(device);
+      if (detected) this.addLog("info", "Momentum advertising profile detected");
+
       this.setState("discovering");
       const discovery = emptyDiscovery();
       this.discovery = discovery;
+      this.addLog("info", "GATT service discovery started");
 
       let service;
       try {
         service = await gatt.getPrimaryService(MOMENTUM_SERIAL_SERVICE);
-      } catch {
+      } catch (error) {
         throw new Error(
-          "The Momentum serial service was not found on this device. It may not be a Flipper running Momentum Firmware, or BLE serial is disabled.",
+          `Momentum Serial Service (FE60) could not be discovered: ${describeError(error)}`,
         );
       }
       discovery.serviceFound = true;
-      this.addLog("info", "Momentum Serial Service discovered");
+      this.addLog("info", "Momentum Serial Service found");
 
       for (const entry of discovery.characteristics) {
         try {
@@ -188,7 +223,7 @@ class MomentumBleTransport implements FlipperBleTransport {
             indicate: p.indicate,
           };
           this.chars.set(entry.key, characteristic);
-          this.addLog("info", `${entry.label} characteristic discovered`);
+          this.addLog("info", `${entry.label} found`);
         } catch (error) {
           entry.error = describeError(error);
           this.addLog("warn", `${entry.label} characteristic not available`);
@@ -224,6 +259,7 @@ class MomentumBleTransport implements FlipperBleTransport {
           : "No notify/indicate characteristics available",
       );
 
+      this.addLog("info", "Connection ready");
       this.setState("connected");
     } catch (error) {
       const message = describeError(error);
@@ -346,6 +382,48 @@ class MomentumBleTransport implements FlipperBleTransport {
   }
 
   // — internals —
+
+  /**
+   * "Momentum advertising profile detected" is logged only when the browser
+   * can actually confirm the advertised service UUID via
+   * `watchAdvertisements()`. Browsers without that API skip the log entry —
+   * we never claim detection we did not observe.
+   */
+  private detectAdvertising(device: BluetoothDevice): Promise<boolean> {
+    const watcher = device as BluetoothDevice & {
+      watchAdvertisements?: (options?: { signal?: AbortSignal }) => Promise<void>;
+    };
+    if (typeof watcher.watchAdvertisements !== "function") return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      const controller = new AbortController();
+      let settled = false;
+      const done = (detected: boolean) => {
+        if (settled) return;
+        settled = true;
+        try {
+          controller.abort();
+        } catch {
+          /* ignore */
+        }
+        resolve(detected);
+      };
+      device.addEventListener(
+        "advertisementreceived",
+        (event: Event) => {
+          const uuids = (event as Event & { uuids?: string[] }).uuids ?? [];
+          done(uuids.some((uuid) => MOMENTUM_ADVERTISING_UUIDS.includes(uuid)));
+        },
+        { signal: controller.signal },
+      );
+      try {
+        void watcher.watchAdvertisements!({ signal: controller.signal }).catch(() => done(false));
+      } catch {
+        done(false);
+      }
+      setTimeout(() => done(false), 1500);
+    });
+  }
 
   private async hardDisconnect(): Promise<void> {
     for (const [key, characteristic] of this.chars) {
