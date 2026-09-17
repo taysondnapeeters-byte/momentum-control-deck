@@ -60,7 +60,7 @@ function DevicePage() {
     clearBleLogs,
     setMockMode,
     knownDevices,
-    reconnectSupported,
+    knownDevicesLookup,
     reconnectFlipper,
   } = useAppState();
 
@@ -162,10 +162,20 @@ function DevicePage() {
                   Nothing connects on its own — reconnecting always needs this button.
                 </p>
               </div>
-            ) : bluetoothSupported && !reconnectSupported ? (
+            ) : bluetoothSupported && knownDevicesLookup?.status === "unavailable" ? (
               <p className="mt-5 text-xs text-muted-foreground">
-                This browser cannot offer a one-tap reconnect to a Flipper you already
-                permitted, so use Normal Connect after a page refresh.
+                Previously permitted devices: unavailable in this browser, so use Normal
+                Connect after a page refresh.
+              </p>
+            ) : bluetoothSupported && knownDevicesLookup?.status === "empty" ? (
+              <p className="mt-5 text-xs text-muted-foreground">
+                No previously permitted Bluetooth devices were returned by this browser.
+                Use Normal Connect.
+              </p>
+            ) : bluetoothSupported && knownDevicesLookup?.status === "error" ? (
+              <p className="mt-5 text-xs text-muted-foreground">
+                The previously-permitted device lookup failed ({knownDevicesLookup.error}).
+                See the connection log for details, or use Normal Connect.
               </p>
             ) : null}
             <Button
