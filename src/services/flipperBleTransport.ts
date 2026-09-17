@@ -164,10 +164,14 @@ class MomentumBleTransport implements FlipperBleTransport {
       device = await navigator.bluetooth!.requestDevice({
         // Web Bluetooth OR-filters across filter objects: any advertised
         // Momentum value OR a "Flipper" name prefix matches.
+        // `services` must be a sequence (array) — a scalar is rejected.
         filters: [
-          ...[...MOMENTUM_ADVERTISING_UUIDS, ...UNVERIFIED_ADVERTISING_UUIDS].map(
-            (uuid) => ({ services: uuid }),
-          ),
+          ...MOMENTUM_ADVERTISING_UUIDS.map((uuid) => ({
+            services: [uuid],
+          })),
+          ...UNVERIFIED_ADVERTISING_UUIDS.map((uuid) => ({
+            services: [uuid],
+          })),
           { namePrefix: "Flipper" },
         ],
         optionalServices: [MOMENTUM_SERIAL_SERVICE],
