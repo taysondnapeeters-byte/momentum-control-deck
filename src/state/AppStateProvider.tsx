@@ -12,7 +12,12 @@ import { idbClear, idbGet, idbSet, KEY_DECK, KEY_SETTINGS } from "@/lib/idb";
 import { MOCK_DECK } from "@/data/mockDeck";
 import type { DeckButton, DeckConfig } from "@/types/deck";
 import { DEFAULT_SETTINGS, type AppSettings, type ThemeMode } from "@/types/settings";
-import type { BleSnapshot, RpcPingResult, RpcSnapshot } from "@/services";
+import type {
+  BleSnapshot,
+  RpcDeviceInfoResult,
+  RpcPingResult,
+  RpcSnapshot,
+} from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
 import { getFlipperRpc } from "@/services/flipperRpc";
 
@@ -31,6 +36,7 @@ interface AppStateValue {
   /** Flipper RPC state. Ping is the only operation in this phase. */
   rpc: RpcSnapshot;
   pingFlipper: () => Promise<RpcPingResult>;
+  refreshDeviceInfo: () => Promise<RpcDeviceInfoResult>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
@@ -137,6 +143,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             rxHex: null,
             status: null,
             error: error instanceof Error ? error.message : "Unknown RPC error.",
+          };
+        }
+      },
+      refreshDeviceInfo: async () => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockDeviceInfo();
+        try {
+          return await rpc.getDeviceInfo();
+        } catch (error) {
+          console.error("Device Info failed", error);
+          return rpc.getSnapshot().lastDeviceInfo ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            roundTripMs: null,
+            entries: [],
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+            at: Date.now(),
           };
         }
       },
