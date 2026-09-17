@@ -53,18 +53,25 @@ function PadButton({
   const held = useRef(false);
   const isHold = useRef(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const log = (type: string) =>
     console.log(
       `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=${type}`,
     );
 
-  const clearHoldTimer = () => {
+  const clearTimers = () => {
     if (holdTimer.current !== null) {
       clearTimeout(holdTimer.current);
       holdTimer.current = null;
     }
+    if (repeatTimer.current !== null) {
+      clearInterval(repeatTimer.current);
+      repeatTimer.current = null;
+    }
   };
+
+  useEffect(() => clearTimers, []);
 
   const press = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (disabled || held.current) return;
@@ -77,20 +84,28 @@ function PadButton({
       // Best-effort: an already-released or synthetic pointer cannot be captured.
     }
     // No RPC on touch-down. If the pointer is still down when the threshold
-    // expires, the gesture becomes a hold and PRESS is sent.
+    // expires, the gesture becomes a hold: LONG, then REPEAT on a cadence.
     holdTimer.current = setTimeout(() => {
       holdTimer.current = null;
       if (!held.current) return;
       isHold.current = true;
-      log("PRESS");
+      log("LONG");
       onInput(flipperKey, "holdStart");
+      repeatTimer.current = setInterval(() => {
+        if (!held.current) {
+          clearTimers();
+          return;
+        }
+        log("REPEAT");
+        onInput(flipperKey, "holdRepeat");
+      }, REPEAT_INTERVAL_MS);
     }, HOLD_THRESHOLD_MS);
   };
 
   const release = () => {
     if (!held.current) return;
     held.current = false;
-    clearHoldTimer();
+    clearTimers();
     if (isHold.current) {
       isHold.current = false;
       log("RELEASE");
