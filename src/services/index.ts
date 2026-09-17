@@ -173,12 +173,41 @@ export interface RpcPowerInfoResult {
   at: number;
 }
 
+/** Entry type exactly as the protobuf `File.FileType` reports it. */
+export type StorageEntryType = "file" | "dir";
+
+/** One filesystem entry as returned by Storage.ListResponse. */
+export interface StorageListEntry {
+  type: StorageEntryType;
+  name: string;
+  /** Byte size as reported by the device. Directories report 0. */
+  size: number;
+  /** Only present when the device supplied one; never computed locally. */
+  md5sum: string | null;
+}
+
+/** Outcome of a Storage List round trip. `mock` is never hidden. */
+export interface StorageListResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  path: string;
+  roundTripMs: number | null;
+  entries: StorageListEntry[];
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+  at: number;
+}
+
 export interface RpcSnapshot {
   ready: boolean;
   busy: boolean;
   lastPing: RpcPingResult | null;
   lastDeviceInfo: RpcDeviceInfoResult | null;
   lastPowerInfo: RpcPowerInfoResult | null;
+  lastStorageList: StorageListResult | null;
 }
 
 export interface FlipperRpc {
@@ -188,6 +217,8 @@ export interface FlipperRpc {
   ping(): Promise<RpcPingResult>;
   getDeviceInfo(): Promise<RpcDeviceInfoResult>;
   getPowerInfo(): Promise<RpcPowerInfoResult>;
+  /** Read-only directory listing for a Flipper storage path such as `/ext`. */
+  listStorage(path: string): Promise<StorageListResult>;
 }
 
 export interface FlipperDevice {

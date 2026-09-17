@@ -18,6 +18,7 @@ import type {
   RpcPingResult,
   RpcPowerInfoResult,
   RpcSnapshot,
+  StorageListResult,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
 import { getFlipperRpc } from "@/services/flipperRpc";
@@ -39,6 +40,7 @@ interface AppStateValue {
   pingFlipper: () => Promise<RpcPingResult>;
   refreshDeviceInfo: () => Promise<RpcDeviceInfoResult>;
   refreshPowerInfo: () => Promise<RpcPowerInfoResult>;
+  refreshStorageList: (path: string) => Promise<StorageListResult>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
@@ -180,6 +182,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             ok: false,
             mock: false,
             commandId: null,
+            roundTripMs: null,
+            entries: [],
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+            at: Date.now(),
+          };
+        }
+      },
+      refreshStorageList: async (path) => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageList(path);
+        try {
+          return await rpc.listStorage(path);
+        } catch (error) {
+          console.error("Storage List failed", error);
+          return rpc.getSnapshot().lastStorageList ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            path,
             roundTripMs: null,
             entries: [],
             txHex: null,

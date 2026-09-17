@@ -23,6 +23,8 @@ import type {
   RpcPowerInfoEntry,
   RpcPowerInfoResult,
   RpcSnapshot,
+  StorageListEntry,
+  StorageListResult,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
 
@@ -41,6 +43,43 @@ function toHex(bytes: Uint8Array): string {
 function describe(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/** `PB_Storage.File.FileType.DIR` as defined in storage.proto. */
+const PB_Storage_DIR = 1;
+
+/** Local sanity check only — the path is otherwise passed through unchanged. */
+function validateStoragePath(path: string): string | null {
+  if (!path) return "A storage path is required.";
+  if (!path.startsWith("/")) return "A Flipper storage path must start with a slash, e.g. /ext.";
+  if (path.split("/").includes("..")) return "The path may not contain '..'.";
+  return null;
+}
+
+/** Plain-language text for the storage statuses defined in flipper.proto. */
+function storageStatusMessage(status: string): string {
+  switch (status) {
+    case "ERROR_STORAGE_NOT_READY":
+      return "The Flipper's storage is not ready — is an SD card inserted?";
+    case "ERROR_STORAGE_NOT_EXIST":
+      return "That folder does not exist on the Flipper.";
+    case "ERROR_STORAGE_EXIST":
+      return "That path already exists on the Flipper.";
+    case "ERROR_STORAGE_DENIED":
+      return "The Flipper refused access to that folder.";
+    case "ERROR_STORAGE_INVALID_NAME":
+      return "The Flipper rejected that path as invalid.";
+    case "ERROR_STORAGE_INVALID_PARAMETER":
+      return "The Flipper rejected the request parameters.";
+    case "ERROR_STORAGE_ALREADY_OPEN":
+      return "That path is already open on the Flipper.";
+    case "ERROR_STORAGE_INTERNAL":
+      return "The Flipper reported an internal storage error.";
+    case "ERROR_STORAGE_NOT_IMPLEMENTED":
+      return "This firmware does not implement that storage operation.";
+    default:
+      return `The Flipper returned status ${status}.`;
+  }
 }
 
 function statusName(status: number | null | undefined): string {
@@ -74,6 +113,7 @@ class MomentumRpc {
   private lastPing: RpcPingResult | null = null;
   private lastDeviceInfo: RpcDeviceInfoResult | null = null;
   private lastPowerInfo: RpcPowerInfoResult | null = null;
+  private lastStorageList: StorageListResult | null = null;
   /** Raw RX hex of the frames that completed a request, by command ID. */
   private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
@@ -109,6 +149,7 @@ class MomentumRpc {
       lastPing: this.lastPing,
       lastDeviceInfo: this.lastDeviceInfo,
       lastPowerInfo: this.lastPowerInfo,
+      lastStorageList: this.lastStorageList,
     };
   }
 
@@ -551,6 +592,182 @@ class MomentumRpc {
     });
   }
 
+  /** Simulated directory listing. Always labelled as mock; never real data. */
+  mockStorageList(path: string): StorageListResult {
+    const result: StorageListResult = {
+      ok: true,
+      mock: true,
+      commandId: ++this.commandId,
+      path,
+      roundTripMs: 24,
+      entries: [
+        { type: "dir", name: "infrared", size: 0, md5sum: null },
+        { type: "dir", name: "subghz", size: 0, md5sum: null },
+        { type: "dir", name: "nfc", size: 0, md5sum: null },
+        { type: "dir", name: "badusb", size: 0, md5sum: null },
+      ],
+      txHex: "(mock — nothing was transmitted)",
+      rxHex: "(mock — nothing was received)",
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+    this.lastStorageList = result;
+    this.transport.logEvent("info", "Mock Storage List — simulated, no Flipper involved");
+    this.emit();
+    return result;
+  }
+
+  /**
+   * Read-only Storage List. The Flipper answers with a stream of
+   * `storage_list_response` messages sharing one command ID; each carries a
+   * batch of `File` entries and the last one has `has_next = false`.
+   */
+  async listStorage(path: string): Promise<StorageListResult> {
+    const log = this.transport.logEvent.bind(this.transport);
+
+    if (!this.transport.canTransfer() || !this.ready) {
+      const message =
+        this.transport.getSnapshot().state === "connected"
+          ? "RPC is not ready — the TX/RX characteristics are not usable."
+          : "Not connected to a Flipper.";
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, path, error: message });
+    }
+
+    const invalid = validateStoragePath(path);
+    if (invalid) {
+      log("error", `Storage List failed: ${invalid}`);
+      return this.finishStorageList({ ok: false, path, error: invalid });
+    }
+
+    const commandId = ++this.commandId;
+    log("info", "Storage List request created");
+    log("info", `Storage List path: ${path}`);
+    log("info", `Storage List command ID: ${commandId}`);
+
+    let frame: Uint8Array;
+    try {
+      frame = PB.Main.encodeDelimited({
+        commandId,
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        storageListRequest: { path },
+      }).finish();
+    } catch (error) {
+      const message = `Protobuf encode failed: ${describe(error)}`;
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, commandId, path, error: message });
+    }
+
+    const txHex = toHex(frame);
+    log("info", `Storage List TX bytes: ${txHex}`);
+
+    const started = performance.now();
+    const waiter = this.track(commandId, started, REQUEST_TIMEOUT_MS, "Storage List timeout");
+
+    try {
+      await this.writeFramed(frame);
+    } catch (error) {
+      this.clearPending(commandId);
+      const message = describe(error);
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    let parts: PB.Main[];
+    try {
+      parts = await waiter;
+    } catch (error) {
+      const message = describe(error);
+      log("error", `Storage List failed: ${message}`);
+      return this.finishStorageList({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    const roundTripMs = Math.round(performance.now() - started);
+    const rxHex = this.completedRxHex.get(commandId) ?? null;
+    this.completedRxHex.delete(commandId);
+    log("info", "Storage List response received");
+
+    const first = parts[0] as PB.Main;
+    const status = statusName(first.commandStatus);
+    log("info", `Storage List response command ID: ${first.commandId}`);
+    log("info", `Storage List response status: ${status}`);
+
+    const mismatched = parts.find((part) => Number(part.commandId ?? 0) !== commandId);
+    if (mismatched) {
+      const message = "Storage List response command ID mismatch";
+      log("error", message);
+      return this.finishStorageList({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: message,
+      });
+    }
+
+    const failed = parts.find((part) => (part.commandStatus ?? 0) !== PB.CommandStatus.OK);
+    if (failed) {
+      const failedStatus = statusName(failed.commandStatus);
+      const message = storageStatusMessage(failedStatus);
+      log("error", `Storage List failed: ${message} (${failedStatus})`);
+      return this.finishStorageList({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status: failedStatus,
+        error: message,
+      });
+    }
+
+    const entries: StorageListEntry[] = [];
+    for (const part of parts) {
+      const listing = part.storageListResponse;
+      if (!listing) {
+        const message = "Storage List unexpected response type";
+        log("error", message);
+        return this.finishStorageList({
+          ok: false,
+          commandId,
+          path,
+          txHex,
+          rxHex,
+          roundTripMs,
+          status,
+          error: "The Flipper answered with something other than a directory listing.",
+        });
+      }
+      log("info", `Storage List decoded response part (has_next: ${part.hasNext ? "true" : "false"})`);
+      for (const file of listing.file ?? []) {
+        entries.push({
+          type: file.type === PB_Storage_DIR ? "dir" : "file",
+          name: file.name ?? "",
+          size: Number(file.size ?? 0),
+          md5sum: file.md5sum ? file.md5sum : null,
+        });
+      }
+    }
+
+    log("info", "Storage List decoded successfully");
+    log("info", `Storage List entries: ${entries.length}`);
+    return this.finishStorageList({
+      ok: true,
+      commandId,
+      path,
+      txHex,
+      rxHex,
+      roundTripMs,
+      status,
+      entries,
+    });
+  }
 
   /**
    * Generic request path. Kept small and reusable so later phases can send
@@ -721,6 +938,27 @@ class MomentumRpc {
       at: Date.now(),
     };
     this.lastPowerInfo = result;
+    this.emit();
+    return result;
+  }
+
+  private finishStorageList(
+    partial: Partial<StorageListResult> & { ok: boolean; path: string },
+  ): StorageListResult {
+    const result: StorageListResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      roundTripMs: partial.roundTripMs ?? null,
+      entries: partial.entries ?? [],
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastStorageList = result;
     this.emit();
     return result;
   }

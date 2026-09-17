@@ -13,6 +13,7 @@ import {
 import { DeviceInfoPanel } from "@/components/DeviceInfoPanel";
 import { PowerInfoPanel } from "@/components/PowerInfoPanel";
 import { RpcPanel } from "@/components/RpcPanel";
+import { StorageListPanel } from "@/components/StorageListPanel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAppState } from "@/state/AppStateProvider";
@@ -196,6 +197,8 @@ function DevicePage() {
       <DeviceInfoPanel />
 
       <PowerInfoPanel />
+
+      <StorageListPanel />
 
       <Panel className="mt-4">
         <div className="flex items-start justify-between gap-4">
