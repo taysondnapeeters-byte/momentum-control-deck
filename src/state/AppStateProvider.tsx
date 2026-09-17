@@ -53,11 +53,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [ble, setBle] = useState<BleSnapshot>(() => transport.getSnapshot());
   const [bluetoothSupported, setBluetoothSupported] = useState(false);
+  const [rpcState, setRpcState] = useState<RpcSnapshot>(() => rpc.getSnapshot());
 
   useEffect(() => {
     setBluetoothSupported(transport.isSupported());
     setBle(transport.getSnapshot());
     return transport.subscribe(setBle);
+  }, []);
+
+  useEffect(() => {
+    setRpcState(rpc.getSnapshot());
+    return rpc.subscribe(setRpcState);
   }, []);
 
   useEffect(() => {
