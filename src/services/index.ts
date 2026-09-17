@@ -254,6 +254,29 @@ export interface StorageReadResult {
   at: number;
 }
 
+/**
+ * Outcome of a Storage Write sequence. One command ID covers every chunk and
+ * the device answers once, at the end, with a status only.
+ */
+export interface StorageWriteResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  path: string;
+  /** Number of bytes the app sent. */
+  size: number;
+  /** Number of Storage Write requests the sequence used. */
+  chunks: number;
+  roundTripMs: number | null;
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+  /** True when the sequence may have left a partial file on the device. */
+  partial: boolean;
+  at: number;
+}
+
 export interface RpcSnapshot {
   ready: boolean;
   busy: boolean;
@@ -263,6 +286,7 @@ export interface RpcSnapshot {
   lastStorageList: StorageListResult | null;
   lastStorageStat: StorageStatResult | null;
   lastStorageRead: StorageReadResult | null;
+  lastStorageWrite: StorageWriteResult | null;
 }
 
 export interface FlipperRpc {
@@ -278,6 +302,8 @@ export interface FlipperRpc {
   statStorage(path: string): Promise<StorageStatResult>;
   /** Read-only file contents. Bytes are returned untouched. */
   readStorage(path: string): Promise<StorageReadResult>;
+  /** Creates a file. The caller must have confirmed the path does not exist. */
+  writeStorage(path: string, bytes: Uint8Array): Promise<StorageWriteResult>;
 }
 
 export interface FlipperDevice {

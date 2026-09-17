@@ -22,6 +22,7 @@ import type {
   StorageListResult,
   StorageReadResult,
   StorageStatResult,
+  StorageWriteResult,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
 import { getFlipperRpc, MAX_READ_BYTES } from "@/services/flipperRpc";
@@ -56,6 +57,11 @@ interface AppStateValue {
   navigateBackStorageDirectory: () => Promise<void>;
   openStorageFile: (name: string) => Promise<void>;
   closeStorageFile: () => void;
+  /** Create-new-file only. Refuses an existing path and verifies afterwards. */
+  storageWriteLoading: boolean;
+  createFileReport: CreateFileReport | null;
+  createStorageFile: (name: string, bytes: Uint8Array) => Promise<CreateFileReport>;
+  clearCreateFileReport: () => void;
   /** Explicit reconnect to a previously permitted device, where supported. */
   reconnectSupported: boolean;
   knownDevices: { id: string; name: string | null }[];
@@ -86,6 +92,18 @@ export interface SelectedFile {
   tooLarge: string | null;
 }
 
+/** Result of one explicit "create file" action, including its verification. */
+export interface CreateFileReport {
+  path: string;
+  size: number;
+  ok: boolean;
+  message: string;
+  write: StorageWriteResult | null;
+  stat: StorageStatResult | null;
+  read: StorageReadResult | null;
+  at: number;
+}
+
 const ROOT_PATH = "/ext";
 
 const AppStateContext = createContext<AppStateValue | null>(null);
@@ -102,6 +120,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageReadLoading, setStorageReadLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+  const [storageWriteLoading, setStorageWriteLoading] = useState(false);
+  const [createReport, setCreateReport] = useState<CreateFileReport | null>(null);
   const [reconnectSupported, setReconnectSupported] = useState(false);
   const [knownDevices, setKnownDevices] = useState<{ id: string; name: string | null }[]>([]);
   const [knownDevicesLookup, setKnownDevicesLookup] = useState<KnownDevicesLookup | null>(null);
@@ -344,6 +364,86 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [busyStorage, readAt, statAt, storagePath],
   );
 
+  /**
+   * Create-new-file only. Storage Stat runs first and the operation is refused
+   * — with zero write packets sent — when the path already exists. After a
+   * successful write the file is read back and compared byte for byte.
+   */
+  const createFile = useCallback(
+    async (name: string, bytes: Uint8Array): Promise<CreateFileReport> => {
+      const path = `${storagePath.replace(/\/$/, "")}/${name}`;
+      const base = { path, size: bytes.length, at: Date.now() };
+      if (storageWriteLoading || busyStorage) {
+        return { ...base, ok: false, message: "Another storage operation is still running.", write: null, stat: null, read: null };
+      }
+
+      setStorageWriteLoading(true);
+      setCreateReport(null);
+      try {
+        // 1. Refuse anything that already exists. Nothing is sent yet.
+        const before = await statAt(path);
+        if (before.ok && before.entry) {
+          const kind = before.entry.type === "dir" ? "folder" : "file";
+          const report: CreateFileReport = {
+            ...base,
+            ok: false,
+            message: `A ${kind} with that name already exists. This version only creates new files, so nothing was sent to the Flipper.`,
+            write: null,
+            stat: before,
+            read: null,
+          };
+          setCreateReport(report);
+          return report;
+        }
+
+        // 2. Write.
+        const write = mockActive
+          ? rpc.mockStorageWrite(path, bytes)
+          : await rpc.writeStorage(path, bytes);
+        if (!write.ok) {
+          const report: CreateFileReport = {
+            ...base,
+            ok: false,
+            message: write.partial
+              ? `${write.error ?? "The write failed."} A partial or empty file may have been created on the Flipper.`
+              : write.error ?? "The write failed.",
+            write,
+            stat: null,
+            read: null,
+          };
+          setCreateReport(report);
+          return report;
+        }
+
+        // 3. Verify: stat, read, byte-for-byte comparison.
+        const stat = await statAt(path);
+        const statOk = stat.ok && stat.entry?.type === "file" && stat.entry.size === bytes.length;
+        const read = statOk ? await readAt(path) : null;
+        const readOk =
+          read !== null && read.ok && read.size === bytes.length && read.data.every((b, i) => b === bytes[i]);
+
+        const report: CreateFileReport = {
+          ...base,
+          ok: Boolean(statOk && readOk),
+          message: statOk && readOk
+            ? `Created and verified: ${bytes.length} bytes read back and identical.`
+            : !statOk
+              ? "Verification failed: the file details reported by the Flipper do not match what was sent."
+              : "Verification failed: the bytes read back do not match what was sent.",
+          write,
+          stat,
+          read,
+        };
+        setCreateReport(report);
+        return report;
+      } finally {
+        setStorageWriteLoading(false);
+        await loadPath(storagePath);
+      }
+    },
+    [busyStorage, loadPath, mockActive, readAt, statAt, storagePath, storageWriteLoading],
+  );
+
   const value = useMemo<AppStateValue>(
     () => ({
       ready,
@@ -427,6 +527,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       navigateBackStorageDirectory: navigateBack,
       openStorageFile: openFile,
       closeStorageFile: () => setSelectedFile(null),
+      storageWriteLoading,
+      createFileReport: createReport,
+      createStorageFile: createFile,
+      clearCreateFileReport: () => setCreateReport(null),
       reconnectSupported,
       knownDevices,
       knownDevicesLookup,
@@ -509,6 +613,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       storageList,
       storageLoading,
       storageReadLoading,
+      storageWriteLoading,
+      createReport,
+      createFile,
       selectedFile,
       reconnectSupported,
       knownDevices,

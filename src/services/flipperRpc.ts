@@ -27,6 +27,7 @@ import type {
   StorageListResult,
   StorageReadResult,
   StorageStatResult,
+  StorageWriteResult,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
 
@@ -43,6 +44,22 @@ const READ_TIMEOUT_MS = 30000;
  * this are never fetched; nothing is ever truncated silently. Easy to raise.
  */
 export const MAX_READ_BYTES = 64 * 1024;
+
+/**
+ * Storage Write, phase 1. The firmware's protobuf contract states
+ * `PB_Storage.File.data max_size: 512`, so one write request carries at most
+ * 512 bytes of file data. The encoded frame stays well inside the firmware's
+ * 1024-byte RPC buffer.
+ */
+const WRITE_CHUNK_BYTES = 512;
+/** Same conservative ceiling as Storage Read. Nothing larger is ever sent. */
+export const MAX_WRITE_BYTES = 64 * 1024;
+/** Storage write namespace for this phase. Nothing outside it is writable. */
+export const WRITE_NAMESPACE = "/ext/";
+/** A multi-chunk write is many frames; it needs more head-room than a read. */
+const WRITE_TIMEOUT_MS = 60000;
+/** Firmware limit from the protobuf options (`PB_Storage.*.path max_length`). */
+const MAX_PATH_LENGTH = 255;
 
 /** Mock-mode only. Clearly simulated content — never device data. */
 const MOCK_FILE_NAME = "momentum-demo.txt";
@@ -69,22 +86,47 @@ const MOCK_TREE: Record<string, StorageListEntry[]> = {
   "/ext/badusb": [],
 };
 
-/** Mock-mode only: metadata for a simulated file, derived from the mock tree. */
-function mockEntryFor(path: string): StorageListEntry {
+/**
+ * Mock-mode only: files "created" during this session, so the simulated flow
+ * behaves like the device (refuse when it exists, read back what was written).
+ * Nothing here ever reaches hardware.
+ */
+const MOCK_WRITTEN = new Map<string, Uint8Array>();
+
+/** Mock-mode only: metadata for a simulated file, or null when it is absent. */
+function mockEntryFor(path: string): StorageListEntry | null {
   const name = path.split("/").pop() ?? path;
   const parent = path.slice(0, path.lastIndexOf("/")) || "/ext";
+  const written = MOCK_WRITTEN.get(path);
+  if (written) return { type: "file", name, size: written.length, md5sum: null };
+  if (MOCK_TREE[path]) return { type: "dir", name, size: 0, md5sum: null };
   const known = (MOCK_TREE[parent] ?? []).find((entry) => entry.name === name);
   if (known) return { ...known };
-  return { type: "file", name, size: 0, md5sum: null };
+  return null;
 }
 
 /** Mock-mode only: simulated bytes. Text for the demo file, bytes otherwise. */
 function mockBytesFor(path: string): Uint8Array {
+  const written = MOCK_WRITTEN.get(path);
+  if (written) return written;
   if (path.endsWith(MOCK_FILE_NAME)) return MOCK_FILE_BYTES;
   const entry = mockEntryFor(path);
-  const bytes = new Uint8Array(entry.size);
+  const bytes = new Uint8Array(entry?.size ?? 0);
   for (let i = 0; i < bytes.length; i += 1) bytes[i] = (i * 7 + 11) & 0xff;
   return bytes;
+}
+
+/** Mock-mode only: entries of a simulated directory, including new files. */
+function mockEntriesFor(path: string): StorageListEntry[] {
+  const base = MOCK_TREE[path] ? [...(MOCK_TREE[path] as StorageListEntry[])] : [];
+  for (const [filePath, bytes] of MOCK_WRITTEN) {
+    const parent = filePath.slice(0, filePath.lastIndexOf("/"));
+    if (parent !== path) continue;
+    const name = filePath.slice(filePath.lastIndexOf("/") + 1);
+    if (base.some((entry) => entry.name === name)) continue;
+    base.push({ type: "file", name, size: bytes.length, md5sum: null });
+  }
+  return base;
 }
 const PING_PAYLOAD = "Momentum Deck Ping";
 
@@ -105,6 +147,30 @@ function validateStoragePath(path: string): string | null {
   if (!path) return "A storage path is required.";
   if (!path.startsWith("/")) return "A Flipper storage path must start with a slash, e.g. /ext.";
   if (path.split("/").includes("..")) return "The path may not contain '..'.";
+  return null;
+}
+
+/**
+ * Stricter rules for the one write-capable operation: the firmware rejects
+ * non-ASCII paths outright, caps the path at 255 characters, and this phase
+ * only ever writes inside `/ext/`.
+ */
+function validateWritePath(path: string): string | null {
+  const basic = validateStoragePath(path);
+  if (basic) return basic;
+  if (!path.startsWith(WRITE_NAMESPACE) || path.length <= WRITE_NAMESPACE.length) {
+    return `Files can only be created inside ${WRITE_NAMESPACE} in this version.`;
+  }
+  if (path.endsWith("/")) return "A file name is required.";
+  if (path.length > MAX_PATH_LENGTH) {
+    return `The path is longer than the ${MAX_PATH_LENGTH} characters the Flipper accepts.`;
+  }
+  for (const char of path) {
+    const code = char.charCodeAt(0);
+    if (code < 0x20 || code > 0x7e) {
+      return "The Flipper only accepts plain ASCII characters in a path.";
+    }
+  }
   return null;
 }
 
@@ -168,6 +234,7 @@ class MomentumRpc {
   private lastStorageList: StorageListResult | null = null;
   private lastStorageStat: StorageStatResult | null = null;
   private lastStorageRead: StorageReadResult | null = null;
+  private lastStorageWrite: StorageWriteResult | null = null;
   /** Raw RX hex of the frames that completed a request, by command ID. */
   private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
@@ -206,6 +273,7 @@ class MomentumRpc {
       lastStorageList: this.lastStorageList,
       lastStorageStat: this.lastStorageStat,
       lastStorageRead: this.lastStorageRead,
+      lastStorageWrite: this.lastStorageWrite,
     };
   }
 
@@ -656,7 +724,7 @@ class MomentumRpc {
       commandId: ++this.commandId,
       path,
       roundTripMs: 24,
-      entries: MOCK_TREE[path] ?? [],
+      entries: mockEntriesFor(path),
       txHex: "(mock — nothing was transmitted)",
       rxHex: "(mock — nothing was received)",
       status: "OK",
@@ -822,17 +890,18 @@ class MomentumRpc {
 
   /** Simulated file metadata. Always labelled as mock; never real data. */
   mockStorageStat(path: string): StorageStatResult {
+    const entry = mockEntryFor(path);
     const result: StorageStatResult = {
-      ok: true,
+      ok: entry !== null,
       mock: true,
       commandId: ++this.commandId,
       path,
-      entry: mockEntryFor(path),
+      entry,
       roundTripMs: 14,
       txHex: "(mock — nothing was transmitted)",
       rxHex: "(mock — nothing was received)",
-      status: "OK",
-      error: null,
+      status: entry ? "OK" : "ERROR_STORAGE_NOT_EXIST",
+      error: entry ? null : storageStatusMessage("ERROR_STORAGE_NOT_EXIST"),
       at: Date.now(),
     };
     this.lastStorageStat = result;
@@ -861,6 +930,225 @@ class MomentumRpc {
     this.transport.logEvent("info", "Mock Storage Read — simulated, no Flipper involved");
     this.emit();
     return result;
+  }
+
+  /**
+   * Simulated file creation. Always labelled as mock; the radio is never used
+   * and no Flipper is contacted. Refuses an existing simulated path, exactly
+   * like the real create-only flow.
+   */
+  mockStorageWrite(path: string, bytes: Uint8Array): StorageWriteResult {
+    const log = this.transport.logEvent.bind(this.transport);
+    const commandId = ++this.commandId;
+    const chunks = Math.max(1, Math.ceil(bytes.length / WRITE_CHUNK_BYTES));
+
+    const invalid = validateWritePath(path);
+    const exists = mockEntryFor(path) !== null;
+    const error = invalid
+      ? invalid
+      : bytes.length > MAX_WRITE_BYTES
+        ? `That content is ${bytes.length} bytes, which is larger than the ${MAX_WRITE_BYTES} byte limit.`
+        : exists
+          ? "That path already exists. This version only creates new files."
+          : null;
+
+    if (!error) MOCK_WRITTEN.set(path, new Uint8Array(bytes));
+    log("info", "Mock Storage Write — simulated, no Flipper involved");
+
+    const result: StorageWriteResult = {
+      ok: !error,
+      mock: true,
+      commandId,
+      path,
+      size: bytes.length,
+      chunks: error ? 0 : chunks,
+      roundTripMs: 42,
+      txHex: "(mock — nothing was transmitted)",
+      rxHex: "(mock — nothing was received)",
+      status: error ? null : "OK",
+      error,
+      partial: false,
+      at: Date.now(),
+    };
+    this.lastStorageWrite = result;
+    this.emit();
+    return result;
+  }
+
+  /**
+   * Storage Write. Every chunk of the sequence shares one command ID; each
+   * request carries at most 512 bytes in `file.data` and sets `has_next` true
+   * except for the last one. The Flipper answers exactly once, with an empty
+   * message carrying the command status.
+   *
+   * The firmware truncates the target with `FSOM_CREATE_ALWAYS` on the first
+   * request, so the caller must have confirmed the path does not exist.
+   * File contents are never logged.
+   */
+  async writeStorage(path: string, bytes: Uint8Array): Promise<StorageWriteResult> {
+    const log = this.transport.logEvent.bind(this.transport);
+
+    if (!this.transport.canTransfer() || !this.ready) {
+      const message =
+        this.transport.getSnapshot().state === "connected"
+          ? "RPC is not ready — the TX/RX characteristics are not usable."
+          : "Not connected to a Flipper.";
+      log("error", `Storage Write failed: ${message}`);
+      return this.finishStorageWrite({ ok: false, path, size: bytes.length, error: message });
+    }
+
+    const invalid = validateWritePath(path);
+    if (invalid) {
+      log("error", `Storage Write failed: ${invalid}`);
+      return this.finishStorageWrite({ ok: false, path, size: bytes.length, error: invalid });
+    }
+
+    if (bytes.length > MAX_WRITE_BYTES) {
+      const message = `That content is ${bytes.length} bytes, which is larger than the ${MAX_WRITE_BYTES} byte limit.`;
+      log("error", `Storage Write failed: ${message}`);
+      return this.finishStorageWrite({ ok: false, path, size: bytes.length, error: message });
+    }
+
+    const commandId = ++this.commandId;
+    const chunkCount = Math.max(1, Math.ceil(bytes.length / WRITE_CHUNK_BYTES));
+    log("info", "Storage Write request created");
+    log("info", `Storage Write path: ${path}`);
+    log("info", `Storage Write command ID: ${commandId}`);
+    log("info", `Storage Write bytes: ${bytes.length} in ${chunkCount} chunk(s)`);
+
+    // Every frame is encoded before anything is sent, so an encoding failure
+    // can never leave a half-written file behind.
+    const frames: Uint8Array[] = [];
+    try {
+      for (let index = 0; index < chunkCount; index += 1) {
+        const offset = index * WRITE_CHUNK_BYTES;
+        const chunk = bytes.subarray(offset, Math.min(offset + WRITE_CHUNK_BYTES, bytes.length));
+        frames.push(
+          PB.Main.encodeDelimited({
+            commandId,
+            commandStatus: PB.CommandStatus.OK,
+            hasNext: index < chunkCount - 1,
+            storageWriteRequest: { path, file: { data: chunk } },
+          }).finish(),
+        );
+      }
+    } catch (error) {
+      const message = `Protobuf encode failed: ${describe(error)}`;
+      log("error", `Storage Write failed: ${message}`);
+      return this.finishStorageWrite({
+        ok: false,
+        commandId,
+        path,
+        size: bytes.length,
+        error: message,
+      });
+    }
+
+    const txHex = frames.map((frame) => toHex(frame)).join("  ");
+    log("info", `Storage Write TX frames: ${frames.length}`);
+
+    const started = performance.now();
+    // Registered once: the whole sequence is a single pending request.
+    const waiter = this.track(commandId, started, WRITE_TIMEOUT_MS, "Storage Write timeout");
+
+    for (let index = 0; index < frames.length; index += 1) {
+      try {
+        await this.writeFramed(frames[index] as Uint8Array);
+      } catch (error) {
+        this.clearPending(commandId);
+        const message = describe(error);
+        log("error", `Storage Write failed: ${message}`);
+        return this.finishStorageWrite({
+          ok: false,
+          commandId,
+          path,
+          size: bytes.length,
+          chunks: index,
+          txHex,
+          // The first request already truncated/created the file.
+          partial: index > 0,
+          error: message,
+        });
+      }
+    }
+
+    let parts: PB.Main[];
+    try {
+      parts = await waiter;
+    } catch (error) {
+      const message = describe(error);
+      log("error", `Storage Write failed: ${message}`);
+      return this.finishStorageWrite({
+        ok: false,
+        commandId,
+        path,
+        size: bytes.length,
+        chunks: frames.length,
+        txHex,
+        partial: true,
+        error: message,
+      });
+    }
+
+    const roundTripMs = Math.round(performance.now() - started);
+    const rxHex = this.completedRxHex.get(commandId) ?? null;
+    this.completedRxHex.delete(commandId);
+    const first = parts[0] as PB.Main;
+    const status = statusName(first.commandStatus);
+    log("info", "Storage Write response received");
+    log("info", `Storage Write response command ID: ${first.commandId}`);
+    log("info", `Storage Write response status: ${status}`);
+
+    if (parts.some((part) => Number(part.commandId ?? 0) !== commandId)) {
+      const message = "Storage Write response command ID mismatch";
+      log("error", message);
+      return this.finishStorageWrite({
+        ok: false,
+        commandId,
+        path,
+        size: bytes.length,
+        chunks: frames.length,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        partial: true,
+        error: message,
+      });
+    }
+
+    const failed = parts.find((part) => (part.commandStatus ?? 0) !== PB.CommandStatus.OK);
+    if (failed) {
+      const failedStatus = statusName(failed.commandStatus);
+      const message = storageStatusMessage(failedStatus);
+      log("error", `Storage Write failed: ${message} (${failedStatus})`);
+      return this.finishStorageWrite({
+        ok: false,
+        commandId,
+        path,
+        size: bytes.length,
+        chunks: frames.length,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status: failedStatus,
+        partial: true,
+        error: message,
+      });
+    }
+
+    log("info", "Storage Write completed successfully");
+    return this.finishStorageWrite({
+      ok: true,
+      commandId,
+      path,
+      size: bytes.length,
+      chunks: frames.length,
+      txHex,
+      rxHex,
+      roundTripMs,
+      status,
+    });
   }
 
   /**
@@ -1370,6 +1658,29 @@ class MomentumRpc {
       at: Date.now(),
     };
     this.lastStorageStat = result;
+    this.emit();
+    return result;
+  }
+
+  private finishStorageWrite(
+    partial: Partial<StorageWriteResult> & { ok: boolean; path: string; size: number },
+  ): StorageWriteResult {
+    const result: StorageWriteResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      size: partial.size,
+      chunks: partial.chunks ?? 0,
+      roundTripMs: partial.roundTripMs ?? null,
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      partial: partial.partial ?? false,
+      at: Date.now(),
+    };
+    this.lastStorageWrite = result;
     this.emit();
     return result;
   }
