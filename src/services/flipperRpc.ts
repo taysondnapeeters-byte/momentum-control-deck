@@ -45,6 +45,43 @@ function describe(error: unknown): string {
   return String(error);
 }
 
+/** `PB_Storage.File.FileType.DIR` as defined in storage.proto. */
+const PB_Storage_DIR = 1;
+
+/** Local sanity check only — the path is otherwise passed through unchanged. */
+function validateStoragePath(path: string): string | null {
+  if (!path) return "A storage path is required.";
+  if (!path.startsWith("/")) return "A Flipper storage path must start with a slash, e.g. /ext.";
+  if (path.split("/").includes("..")) return "The path may not contain '..'.";
+  return null;
+}
+
+/** Plain-language text for the storage statuses defined in flipper.proto. */
+function storageStatusMessage(status: string): string {
+  switch (status) {
+    case "ERROR_STORAGE_NOT_READY":
+      return "The Flipper's storage is not ready — is an SD card inserted?";
+    case "ERROR_STORAGE_NOT_EXIST":
+      return "That folder does not exist on the Flipper.";
+    case "ERROR_STORAGE_EXIST":
+      return "That path already exists on the Flipper.";
+    case "ERROR_STORAGE_DENIED":
+      return "The Flipper refused access to that folder.";
+    case "ERROR_STORAGE_INVALID_NAME":
+      return "The Flipper rejected that path as invalid.";
+    case "ERROR_STORAGE_INVALID_PARAMETER":
+      return "The Flipper rejected the request parameters.";
+    case "ERROR_STORAGE_ALREADY_OPEN":
+      return "That path is already open on the Flipper.";
+    case "ERROR_STORAGE_INTERNAL":
+      return "The Flipper reported an internal storage error.";
+    case "ERROR_STORAGE_NOT_IMPLEMENTED":
+      return "This firmware does not implement that storage operation.";
+    default:
+      return `The Flipper returned status ${status}.`;
+  }
+}
+
 function statusName(status: number | null | undefined): string {
   if (status === null || status === undefined) return "OK";
   const name = (PB.CommandStatus as unknown as Record<number, string>)[status];
