@@ -42,6 +42,7 @@ declare global {
     connect(): Promise<BluetoothRemoteGATTServer>;
     disconnect(): void;
     getPrimaryService(uuid: string): Promise<BluetoothRemoteGATTService>;
+    getPrimaryServices(uuid?: string): Promise<BluetoothRemoteGATTService[]>;
   }
 
   interface BluetoothDevice extends EventTarget {
