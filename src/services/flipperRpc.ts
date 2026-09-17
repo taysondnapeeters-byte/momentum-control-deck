@@ -239,6 +239,158 @@ class MomentumRpc {
     });
   }
 
+  /** Simulated device info. Always labelled as mock; never real hardware data. */
+  mockDeviceInfo(): RpcDeviceInfoResult {
+    const result: RpcDeviceInfoResult = {
+      ok: true,
+      mock: true,
+      commandId: ++this.commandId,
+      roundTripMs: 18,
+      entries: [
+        { key: "hardware_model", value: "(mock)" },
+        { key: "firmware_origin", value: "(mock)" },
+      ],
+      txHex: "(mock — nothing was transmitted)",
+      rxHex: "(mock — nothing was received)",
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+    this.lastDeviceInfo = result;
+    this.transport.logEvent("info", "Mock Device Info — simulated, no Flipper involved");
+    this.emit();
+    return result;
+  }
+
+  /**
+   * Read-only System Device Info. The Flipper answers with a stream of
+   * key/value `PB.Main` messages sharing one command ID.
+   */
+  async getDeviceInfo(): Promise<RpcDeviceInfoResult> {
+    const log = this.transport.logEvent.bind(this.transport);
+
+    if (!this.transport.canTransfer() || !this.ready) {
+      const message =
+        this.transport.getSnapshot().state === "connected"
+          ? "RPC is not ready — the TX/RX characteristics are not usable."
+          : "Not connected to a Flipper.";
+      log("error", `Device Info failed: ${message}`);
+      return this.finishDeviceInfo({ ok: false, error: message });
+    }
+
+    const commandId = ++this.commandId;
+    log("info", "Device Info request created");
+    log("info", `Device Info command ID: ${commandId}`);
+
+    let frame: Uint8Array;
+    try {
+      frame = PB.Main.encodeDelimited({
+        commandId,
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        systemDeviceInfoRequest: {},
+      }).finish();
+    } catch (error) {
+      const message = `Protobuf encode failed: ${describe(error)}`;
+      log("error", `Device Info failed: ${message}`);
+      return this.finishDeviceInfo({ ok: false, commandId, error: message });
+    }
+
+    const txHex = toHex(frame);
+    log("info", `Device Info TX bytes: ${txHex}`);
+
+    const started = performance.now();
+    const waiter = this.track(commandId, started, REQUEST_TIMEOUT_MS, "Device Info timeout");
+
+    try {
+      await this.writeFramed(frame);
+    } catch (error) {
+      this.clearPending(commandId);
+      const message = describe(error);
+      log("error", `Device Info failed: ${message}`);
+      return this.finishDeviceInfo({ ok: false, commandId, txHex, error: message });
+    }
+
+    let parts: PB.Main[];
+    try {
+      parts = await waiter;
+    } catch (error) {
+      const message = describe(error);
+      log("error", `Device Info failed: ${message}`);
+      return this.finishDeviceInfo({ ok: false, commandId, txHex, error: message });
+    }
+
+    const roundTripMs = Math.round(performance.now() - started);
+    const rxHex = this.lastRxParts(commandId, parts.length);
+    log("info", "Device Info response received");
+
+    const first = parts[0] as PB.Main;
+    const status = statusName(first.commandStatus);
+    log("info", `Device Info response command ID: ${first.commandId}`);
+    log("info", `Device Info response status: ${status}`);
+
+    const mismatched = parts.find((part) => Number(part.commandId ?? 0) !== commandId);
+    if (mismatched) {
+      const message = "Device Info response command ID mismatch";
+      log("error", message);
+      return this.finishDeviceInfo({
+        ok: false,
+        commandId,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: message,
+      });
+    }
+
+    const failed = parts.find((part) => (part.commandStatus ?? 0) !== PB.CommandStatus.OK);
+    if (failed) {
+      const failedStatus = statusName(failed.commandStatus);
+      const message = `The Flipper returned status ${failedStatus}.`;
+      log("error", `Device Info failed: ${message}`);
+      return this.finishDeviceInfo({
+        ok: false,
+        commandId,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status: failedStatus,
+        error: message,
+      });
+    }
+
+    const entries: RpcDeviceInfoEntry[] = [];
+    for (const part of parts) {
+      const info = part.systemDeviceInfoResponse;
+      if (!info) {
+        const message = "The response did not contain device information.";
+        log("error", `Device Info failed: ${message}`);
+        return this.finishDeviceInfo({
+          ok: false,
+          commandId,
+          txHex,
+          rxHex,
+          roundTripMs,
+          status,
+          error: message,
+        });
+      }
+      entries.push({ key: info.key ?? "", value: info.value ?? "" });
+    }
+
+    log("info", "Device Info decoded successfully");
+    return this.finishDeviceInfo({
+      ok: true,
+      commandId,
+      txHex,
+      rxHex,
+      roundTripMs,
+      status,
+      entries,
+    });
+  }
+
   /**
    * Generic request path. Kept small and reusable so later phases can send
    * other `PB.Main` messages without touching the framing or pending-map logic.
