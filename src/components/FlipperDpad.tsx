@@ -45,7 +45,7 @@ function PadButton({
 }: {
   flipperKey: FlipperInputKey;
   label: string;
-  onInput: (key: FlipperInputKey, gesture: PadGesture) => void;
+  onInput: (key: FlipperInputKey, gesture: PadGesture) => void | Promise<void>;
   disabled: boolean;
   className?: string;
   children: ReactNode;
@@ -53,7 +53,7 @@ function PadButton({
   const held = useRef(false);
   const isHold = useRef(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const log = (type: string) =>
     console.log(
@@ -66,12 +66,31 @@ function PadButton({
       holdTimer.current = null;
     }
     if (repeatTimer.current !== null) {
-      clearInterval(repeatTimer.current);
+      clearTimeout(repeatTimer.current);
       repeatTimer.current = null;
     }
   };
 
   useEffect(() => clearTimers, []);
+
+  /**
+   * Self-pacing REPEAT: the next one is only scheduled after the previous send
+   * has completed, so a slow Bluetooth link repeats more slowly instead of
+   * piling events up behind later taps.
+   */
+  const scheduleRepeat = () => {
+    repeatTimer.current = setTimeout(async () => {
+      repeatTimer.current = null;
+      if (!held.current) return;
+      log("REPEAT");
+      try {
+        await onInput(flipperKey, "holdRepeat");
+      } catch {
+        // A failed repeat never stops the hold; the next tick tries again.
+      }
+      if (held.current) scheduleRepeat();
+    }, REPEAT_INTERVAL_MS);
+  };
 
   const press = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (disabled || held.current) return;
@@ -90,15 +109,8 @@ function PadButton({
       if (!held.current) return;
       isHold.current = true;
       log("LONG");
-      onInput(flipperKey, "holdStart");
-      repeatTimer.current = setInterval(() => {
-        if (!held.current) {
-          clearTimers();
-          return;
-        }
-        log("REPEAT");
-        onInput(flipperKey, "holdRepeat");
-      }, REPEAT_INTERVAL_MS);
+      void onInput(flipperKey, "holdStart");
+      scheduleRepeat();
     }, HOLD_THRESHOLD_MS);
   };
 

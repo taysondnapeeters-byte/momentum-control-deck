@@ -34,6 +34,8 @@ export interface LatestFrame {
 
 const EMPTY_STATS: StreamStats = { frames: 0, dropped: 0, lastSize: null, lastAt: null, fps: 0 };
 const MOCK_FRAME_MS = 100;
+/** A single input send may never block the queue longer than this. */
+const SEND_WATCHDOG_MS = 6000;
 
 export function useScreenStream() {
   const { settings, connection } = useAppState();
@@ -159,9 +161,13 @@ export function useScreenStream() {
    * qFlipper approach — menus listen for SHORT, and RPC input bypasses the
    * hardware timer that would normally synthesize it). A hold sends LONG when
    * the threshold is crossed, REPEAT on a cadence while held, and RELEASE on
-   * pointer up. Sends are serialized so events never arrive out of order.
+   * pointer up. Sends are serialized so events never arrive out of order, but
+   * the queue is never allowed to starve a later tap: REPEAT is dropped while
+   * another event is in flight, and a send that outlives the RPC timeout
+   * window is abandoned so the chain starts clean again.
    */
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const inFlightRef = useRef(false);
   const sendKey = useCallback(
     async (key: FlipperInputKey, gesture: PadGesture) => {
       const action: FlipperInputAction =
@@ -172,6 +178,8 @@ export function useScreenStream() {
             : gesture === "holdRepeat"
               ? "repeat"
               : "release";
+
+      console.log("Gesture received in useScreenStream:", { key, gesture, action });
 
       if (action === "long") {
         if (heldRef.current.has(key)) return;
@@ -202,13 +210,43 @@ export function useScreenStream() {
         setInputError("Not connected — the input was not sent.");
         return;
       }
+      // A repeat is idempotent: if the link is still busy, drop it rather than
+      // queue it, so a hold can never build a backlog in front of a later tap.
+      if (action === "repeat" && inFlightRef.current) return;
+
       const send = async () => {
-        const result = await rpc.sendInputEvent(key, action);
-        setInputError(result.ok ? null : (result.error ?? `Input ${key} ${action} failed.`));
+        inFlightRef.current = true;
+        try {
+          const result = await rpc.sendInputEvent(key, action);
+          setInputError(result.ok ? null : (result.error ?? `Input ${key} ${action} failed.`));
+        } catch (error) {
+          setInputError(error instanceof Error ? error.message : `Input ${key} ${action} failed.`);
+        } finally {
+          inFlightRef.current = false;
+        }
       };
-      const queued = sendQueueRef.current.then(send, send);
+
+      // Watchdog: a send that outlives the RPC timeout window must not hold the
+      // chain hostage — the next event starts from a fresh resolved promise.
+      const guarded = () =>
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            inFlightRef.current = false;
+            resolve();
+          }, SEND_WATCHDOG_MS);
+          void send().finally(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+
+      const queued = sendQueueRef.current.then(guarded, guarded);
       sendQueueRef.current = queued.catch(() => {});
       await queued;
+      // Chain emptied: reset to a plain resolved promise so nothing accumulates.
+      if (sendQueueRef.current === queued || !inFlightRef.current) {
+        sendQueueRef.current = Promise.resolve();
+      }
     },
     [connection, mockActive],
   );
