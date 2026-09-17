@@ -321,7 +321,8 @@ class MomentumRpc {
     }
 
     const roundTripMs = Math.round(performance.now() - started);
-    const rxHex = this.lastRxParts(commandId, parts.length);
+    const rxHex = this.completedRxHex.get(commandId) ?? null;
+    this.completedRxHex.delete(commandId);
     log("info", "Device Info response received");
 
     const first = parts[0] as PB.Main;
@@ -539,6 +540,26 @@ class MomentumRpc {
       error: partial.error ?? null,
     };
     this.lastPing = result;
+    this.emit();
+    return result;
+  }
+
+  private finishDeviceInfo(
+    partial: Partial<RpcDeviceInfoResult> & { ok: boolean },
+  ): RpcDeviceInfoResult {
+    const result: RpcDeviceInfoResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      roundTripMs: partial.roundTripMs ?? null,
+      entries: partial.entries ?? [],
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastDeviceInfo = result;
     this.emit();
     return result;
   }
