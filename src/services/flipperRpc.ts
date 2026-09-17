@@ -1504,18 +1504,64 @@ class MomentumRpc {
       const total = header.bytesRead + header.value;
       if (this.buffer.length < total) return; // message body still incomplete
       const body = this.buffer.subarray(header.bytesRead, total);
-      this.lastRxHex = toHex(this.buffer.subarray(0, total));
-      this.buffer = this.buffer.slice(total);
       let message: PB.Main;
       try {
         message = PB.Main.decode(body);
       } catch (error) {
+        this.buffer = this.buffer.slice(total);
         this.transport.logEvent("error", `RPC decode error: ${describe(error)}`);
         continue;
       }
+
+      // Unsolicited stream events (GUI screen frames) are routed by content
+      // type, never by command ID. They skip the pending collector, the hex
+      // conversion and the per-frame log line — this path must stay cheap and
+      // must never log frame contents.
+      if (this.dispatchEvent(message)) {
+        this.buffer = this.buffer.slice(total);
+        continue;
+      }
+
+      this.lastRxHex = toHex(this.buffer.subarray(0, total));
+      this.buffer = this.buffer.slice(total);
       this.transport.logEvent("info", "RPC response received");
       this.deliver(message, this.lastRxHex ?? "");
     }
+  }
+
+  /**
+   * Generic unsolicited-event dispatch. Returns true when the message was an
+   * event and must not be treated as a command response. Kept generic so other
+   * asynchronous RPC messages can be added later without touching framing.
+   */
+  private dispatchEvent(message: PB.Main): boolean {
+    if (message.content !== "guiScreenFrame") return false;
+    for (const listener of this.eventListeners) {
+      try {
+        listener(message);
+      } catch (error) {
+        console.error("RPC event listener failed", error);
+      }
+    }
+    const frame = message.guiScreenFrame;
+    if (frame && this.frameListeners.size > 0) {
+      const data = frame.data instanceof Uint8Array ? frame.data : new Uint8Array(0);
+      const event: ScreenFrameEvent = {
+        data,
+        orientation: ORIENTATIONS[Number(frame.orientation ?? 0)] ?? "horizontal",
+        bgColor: Number(frame.bgColor ?? 0),
+        fgColor: Number(frame.fgColor ?? 0),
+        at: Date.now(),
+      };
+      for (const listener of this.frameListeners) {
+        try {
+          listener(event);
+        } catch (error) {
+          console.error("Screen frame listener failed", error);
+        }
+      }
+    }
+    return true;
   }
 
   /** Registers a pending request and returns the promise for its response(s). */
