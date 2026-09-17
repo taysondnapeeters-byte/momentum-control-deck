@@ -66,6 +66,17 @@ function toHex(view: DataView): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join(" ");
 }
 
+/** Exact runtime shape of a caught error, for diagnostics. */
+function describeOriginalError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const ctor = error.constructor?.name ?? "unknown";
+    const name = "name" in error ? String((error as { name: unknown }).name) : "(none)";
+    const message = "message" in error ? String((error as { message: unknown }).message) : "(none)";
+    return `constructor=${ctor}, name=${name}, message=${message}`;
+  }
+  return `non-object error: ${String(error)}`;
+}
+
 function describeError(error: unknown): string {
   if (error instanceof DOMException) {
     switch (error.name) {
