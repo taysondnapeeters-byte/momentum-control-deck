@@ -232,13 +232,16 @@ class MomentumBleTransport implements FlipperBleTransport {
       try {
         service = await gatt.getPrimaryService(MOMENTUM_SERIAL_SERVICE);
       } catch (error) {
-        this.addLog("error", `getPrimaryService(FE60) original error — ${describeOriginalError(error)}`);
+        this.addLog(
+          "error",
+          `getPrimaryService(FE60 = ${MOMENTUM_SERIAL_SERVICE}) original error — ${describeOriginalError(error)}`,
+        );
         throw new Error(
-          `Momentum Serial Service (FE60) could not be discovered. Original error: ${describeOriginalError(error)}`,
+          `Momentum Serial Service (FE60 = ${MOMENTUM_SERIAL_SERVICE}) could not be discovered. Original error: ${describeOriginalError(error)}`,
         );
       }
       discovery.serviceFound = true;
-      this.addLog("info", "Momentum Serial Service found");
+      this.addLog("info", `Momentum Serial Service (FE60) found: ${MOMENTUM_SERIAL_SERVICE}`);
 
       for (const entry of discovery.characteristics) {
         try {
