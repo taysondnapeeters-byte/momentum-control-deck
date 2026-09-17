@@ -275,6 +275,16 @@ class MomentumBleTransport implements FlipperBleTransport {
             const value = target.value;
             if (!value || value.byteLength === 0) return;
             this.pushRaw(entry.key, value);
+            const bytes = new Uint8Array(
+              value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength),
+            );
+            for (const listener of this.dataListeners) {
+              try {
+                listener(entry.key, bytes);
+              } catch (error) {
+                console.error("BLE data listener failed", error);
+              }
+            }
           };
           characteristic.addEventListener("characteristicvaluechanged", handler);
           this.notifyHandlers.set(entry.key, handler);
