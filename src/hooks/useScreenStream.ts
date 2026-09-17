@@ -177,6 +177,8 @@ export function useScreenStream() {
               ? "repeat"
               : "release";
 
+      console.log("Gesture received in useScreenStream:", { key, gesture, action });
+
       if (action === "long") {
         if (heldRef.current.has(key)) return;
         heldRef.current.add(key);
