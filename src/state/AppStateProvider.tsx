@@ -151,6 +151,153 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // — read-only filesystem browser —
+
+  const mockActive = settings.mockMode && ble.state !== "connected";
+
+  const listAt = useCallback(
+    async (path: string): Promise<StorageListResult> => {
+      // Mock mode never touches the radio and is always labelled as mock.
+      if (mockActive) return rpc.mockStorageList(path);
+      try {
+        return await rpc.listStorage(path);
+      } catch (error) {
+        console.error("Storage List failed", error);
+        return {
+          ok: false,
+          mock: false,
+          commandId: null,
+          path,
+          roundTripMs: null,
+          entries: [],
+          txHex: null,
+          rxHex: null,
+          status: null,
+          error: error instanceof Error ? error.message : "Unknown RPC error.",
+          at: Date.now(),
+        };
+      }
+    },
+    [mockActive],
+  );
+
+  const statAt = useCallback(
+    async (path: string): Promise<StorageStatResult> => {
+      if (mockActive) return rpc.mockStorageStat(path);
+      try {
+        return await rpc.statStorage(path);
+      } catch (error) {
+        console.error("Storage Stat failed", error);
+        return {
+          ok: false,
+          mock: false,
+          commandId: null,
+          path,
+          entry: null,
+          roundTripMs: null,
+          txHex: null,
+          rxHex: null,
+          status: null,
+          error: error instanceof Error ? error.message : "Unknown RPC error.",
+          at: Date.now(),
+        };
+      }
+    },
+    [mockActive],
+  );
+
+  const readAt = useCallback(
+    async (path: string): Promise<StorageReadResult> => {
+      if (mockActive) return rpc.mockStorageRead(path);
+      try {
+        return await rpc.readStorage(path);
+      } catch (error) {
+        console.error("Storage Read failed", error);
+        return {
+          ok: false,
+          mock: false,
+          commandId: null,
+          path,
+          size: 0,
+          data: new Uint8Array(0),
+          roundTripMs: null,
+          txHex: null,
+          rxHex: null,
+          status: null,
+          error: error instanceof Error ? error.message : "Unknown RPC error.",
+          at: Date.now(),
+        };
+      }
+    },
+    [mockActive],
+  );
+
+  const busyStorage = storageLoading || storageReadLoading;
+
+  /** One listing at a time; the path is remembered for the next session. */
+  const loadPath = useCallback(
+    async (path?: string) => {
+      const target = path ?? storagePath;
+      if (busyStorage) return;
+      setStorageLoading(true);
+      try {
+        const result = await listAt(target);
+        setStoragePath(target);
+        setStorageList(result);
+      } finally {
+        setStorageLoading(false);
+      }
+    },
+    [busyStorage, listAt, storagePath],
+  );
+
+  const navigateInto = useCallback(
+    async (name: string) => {
+      if (busyStorage) return;
+      const next = `${storagePath.replace(/\/$/, "")}/${name}`;
+      setSelectedFile(null);
+      await loadPath(next);
+    },
+    [busyStorage, loadPath, storagePath],
+  );
+
+  const navigateBack = useCallback(async () => {
+    if (busyStorage || storagePath === ROOT_PATH) return;
+    const parent = storagePath.slice(0, storagePath.lastIndexOf("/")) || ROOT_PATH;
+    setSelectedFile(null);
+    await loadPath(parent.length < ROOT_PATH.length ? ROOT_PATH : parent);
+  }, [busyStorage, loadPath, storagePath]);
+
+  /** Stat first, then read — and only when the file fits the safety limit. */
+  const openFile = useCallback(
+    async (name: string) => {
+      if (busyStorage) return;
+      const path = `${storagePath.replace(/\/$/, "")}/${name}`;
+      setStorageReadLoading(true);
+      setSelectedFile({ path, name, stat: null, read: null, tooLarge: null });
+      try {
+        const stat = await statAt(path);
+        setSelectedFile({ path, name, stat, read: null, tooLarge: null });
+        if (!stat.ok || !stat.entry) return;
+        if (stat.entry.size > MAX_READ_BYTES) {
+          setSelectedFile({
+            path,
+            name,
+            stat,
+            read: null,
+            tooLarge: `This file is ${stat.entry.size} bytes, which is larger than the ${MAX_READ_BYTES} byte limit of the current read mode. It was not read.`,
+          });
+          return;
+        }
+        const read = await readAt(path);
+        setSelectedFile({ path, name, stat, read, tooLarge: null });
+      } finally {
+        setStorageReadLoading(false);
+      }
+    },
+    [busyStorage, readAt, statAt, storagePath],
+  );
+
   const value = useMemo<AppStateValue>(
     () => ({
       ready,
