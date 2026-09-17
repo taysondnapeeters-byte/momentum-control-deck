@@ -157,59 +157,24 @@ export function useScreenStream() {
   }, [connection, detach, mockActive]);
 
   /**
-   * One gesture per control. A quick tap sends exactly one SHORT event (the
-   * qFlipper approach — menus listen for SHORT, and RPC input bypasses the
-   * hardware timer that would normally synthesize it). A hold sends LONG when
-   * the threshold is crossed, REPEAT on a cadence while held, and RELEASE on
-   * pointer up. Sends are serialized so events never arrive out of order, but
-   * the queue is never allowed to starve a later tap: REPEAT is dropped while
-   * another event is in flight, and a send that outlives the RPC timeout
-   * window is abandoned so the chain starts clean again.
+   * One gesture per control, expanded into the full physical button lifecycle.
+   * Flipper OS drops SHORT/LONG/REPEAT events that are not preceded by a PRESS
+   * for the same key, so every gesture is bracketed:
+   *   tap        → PRESS → SHORT → RELEASE
+   *   holdStart  → PRESS → LONG
+   *   holdRepeat → REPEAT (cadence from the D-pad)
+   *   holdRelease→ RELEASE
+   * Sends are serialized so events never arrive out of order, but the queue is
+   * never allowed to starve a later tap: REPEAT is dropped while another event
+   * is in flight, and a send that outlives the RPC timeout window is abandoned
+   * so the chain starts clean again.
    */
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const inFlightRef = useRef(false);
-  const sendKey = useCallback(
-    async (key: FlipperInputKey, gesture: PadGesture) => {
-      const action: FlipperInputAction =
-        gesture === "tap"
-          ? "short"
-          : gesture === "holdStart"
-            ? "long"
-            : gesture === "holdRepeat"
-              ? "repeat"
-              : "release";
 
-      console.log("Gesture received in useScreenStream:", { key, gesture, action });
-
-      if (action === "long") {
-        if (heldRef.current.has(key)) return;
-        heldRef.current.add(key);
-      } else if (action === "repeat") {
-        // Drop a stray interval tick that lands after the release.
-        if (!heldRef.current.has(key)) return;
-      } else if (action === "release") {
-        if (!heldRef.current.has(key)) return;
-        heldRef.current.delete(key);
-      }
-      // "short" touches nothing: a tap is never bracketed by a hold.
-
-      if (mockActive) {
-        const state = mockStateRef.current;
-        state.pressed = action === "release" ? null : key;
-        // The simulated display reacts to taps, hold starts and repeats.
-        if (action !== "release") {
-          if (key === "down") state.selection = (state.selection + 1) % MOCK_MENU_ROWS;
-          if (key === "up") state.selection = (state.selection + MOCK_MENU_ROWS - 1) % MOCK_MENU_ROWS;
-          if (key === "ok" || key === "right") state.tick += 8;
-          if (key === "back" || key === "left") state.selection = 0;
-        }
-        return;
-      }
-
-      if (connection !== "connected" || !rpc.isReady()) {
-        setInputError("Not connected — the input was not sent.");
-        return;
-      }
+  /** Enqueue a single input action on the serialized, watchdog-guarded chain. */
+  const enqueue = useCallback(
+    async (key: FlipperInputKey, action: FlipperInputAction) => {
       // A repeat is idempotent: if the link is still busy, drop it rather than
       // queue it, so a hold can never build a backlog in front of a later tap.
       if (action === "repeat" && inFlightRef.current) return;
@@ -248,7 +213,59 @@ export function useScreenStream() {
         sendQueueRef.current = Promise.resolve();
       }
     },
-    [connection, mockActive],
+    [],
+  );
+
+  const sendKey = useCallback(
+    async (key: FlipperInputKey, gesture: PadGesture) => {
+      const sequence: FlipperInputAction[] =
+        gesture === "tap"
+          ? ["press", "short", "release"]
+          : gesture === "holdStart"
+            ? ["press", "long"]
+            : gesture === "holdRepeat"
+              ? ["repeat"]
+              : ["release"];
+
+      console.log("Gesture received in useScreenStream:", { key, gesture, sequence });
+
+      // Held-set bookkeeping lives on the bracketing events. A tap's
+      // PRESS→…→RELEASE adds then removes the key within the same gesture.
+      const bracket = sequence[0] === "press" ? sequence[sequence.length - 1] : sequence[0];
+      if (bracket === "release") {
+        if (!heldRef.current.has(key) && gesture !== "tap") return;
+        heldRef.current.delete(key);
+      } else {
+        if (heldRef.current.has(key)) return;
+        heldRef.current.add(key);
+      }
+
+      if (mockActive) {
+        const state = mockStateRef.current;
+        // The simulated display reacts once per gesture: on the tap's SHORT
+        // and on a hold's LONG/REPEAT — never on PRESS or RELEASE.
+        const reactive =
+          gesture === "tap" || gesture === "holdStart" || gesture === "holdRepeat";
+        state.pressed = gesture === "holdRelease" ? null : key;
+        if (reactive) {
+          if (key === "down") state.selection = (state.selection + 1) % MOCK_MENU_ROWS;
+          if (key === "up") state.selection = (state.selection + MOCK_MENU_ROWS - 1) % MOCK_MENU_ROWS;
+          if (key === "ok" || key === "right") state.tick += 8;
+          if (key === "back" || key === "left") state.selection = 0;
+        }
+        return;
+      }
+
+      if (connection !== "connected" || !rpc.isReady()) {
+        setInputError("Not connected — the input was not sent.");
+        return;
+      }
+
+      for (const action of sequence) {
+        await enqueue(key, action);
+      }
+    },
+    [connection, mockActive, enqueue],
   );
 
   // A lost connection stops rendering immediately. No retry, no reconnect.
