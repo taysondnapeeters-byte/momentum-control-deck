@@ -27,6 +27,7 @@ import type {
   StorageListResult,
   StorageReadResult,
   StorageStatResult,
+  StorageWriteResult,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
 
@@ -43,6 +44,22 @@ const READ_TIMEOUT_MS = 30000;
  * this are never fetched; nothing is ever truncated silently. Easy to raise.
  */
 export const MAX_READ_BYTES = 64 * 1024;
+
+/**
+ * Storage Write, phase 1. The firmware's protobuf contract states
+ * `PB_Storage.File.data max_size: 512`, so one write request carries at most
+ * 512 bytes of file data. The encoded frame stays well inside the firmware's
+ * 1024-byte RPC buffer.
+ */
+const WRITE_CHUNK_BYTES = 512;
+/** Same conservative ceiling as Storage Read. Nothing larger is ever sent. */
+export const MAX_WRITE_BYTES = 64 * 1024;
+/** Storage write namespace for this phase. Nothing outside it is writable. */
+export const WRITE_NAMESPACE = "/ext/";
+/** A multi-chunk write is many frames; it needs more head-room than a read. */
+const WRITE_TIMEOUT_MS = 60000;
+/** Firmware limit from the protobuf options (`PB_Storage.*.path max_length`). */
+const MAX_PATH_LENGTH = 255;
 
 /** Mock-mode only. Clearly simulated content — never device data. */
 const MOCK_FILE_NAME = "momentum-demo.txt";
@@ -69,22 +86,47 @@ const MOCK_TREE: Record<string, StorageListEntry[]> = {
   "/ext/badusb": [],
 };
 
-/** Mock-mode only: metadata for a simulated file, derived from the mock tree. */
-function mockEntryFor(path: string): StorageListEntry {
+/**
+ * Mock-mode only: files "created" during this session, so the simulated flow
+ * behaves like the device (refuse when it exists, read back what was written).
+ * Nothing here ever reaches hardware.
+ */
+const MOCK_WRITTEN = new Map<string, Uint8Array>();
+
+/** Mock-mode only: metadata for a simulated file, or null when it is absent. */
+function mockEntryFor(path: string): StorageListEntry | null {
   const name = path.split("/").pop() ?? path;
   const parent = path.slice(0, path.lastIndexOf("/")) || "/ext";
+  const written = MOCK_WRITTEN.get(path);
+  if (written) return { type: "file", name, size: written.length, md5sum: null };
+  if (MOCK_TREE[path]) return { type: "dir", name, size: 0, md5sum: null };
   const known = (MOCK_TREE[parent] ?? []).find((entry) => entry.name === name);
   if (known) return { ...known };
-  return { type: "file", name, size: 0, md5sum: null };
+  return null;
 }
 
 /** Mock-mode only: simulated bytes. Text for the demo file, bytes otherwise. */
 function mockBytesFor(path: string): Uint8Array {
+  const written = MOCK_WRITTEN.get(path);
+  if (written) return written;
   if (path.endsWith(MOCK_FILE_NAME)) return MOCK_FILE_BYTES;
   const entry = mockEntryFor(path);
-  const bytes = new Uint8Array(entry.size);
+  const bytes = new Uint8Array(entry?.size ?? 0);
   for (let i = 0; i < bytes.length; i += 1) bytes[i] = (i * 7 + 11) & 0xff;
   return bytes;
+}
+
+/** Mock-mode only: entries of a simulated directory, including new files. */
+function mockEntriesFor(path: string): StorageListEntry[] {
+  const base = MOCK_TREE[path] ? [...(MOCK_TREE[path] as StorageListEntry[])] : [];
+  for (const [filePath, bytes] of MOCK_WRITTEN) {
+    const parent = filePath.slice(0, filePath.lastIndexOf("/"));
+    if (parent !== path) continue;
+    const name = filePath.slice(filePath.lastIndexOf("/") + 1);
+    if (base.some((entry) => entry.name === name)) continue;
+    base.push({ type: "file", name, size: bytes.length, md5sum: null });
+  }
+  return base;
 }
 const PING_PAYLOAD = "Momentum Deck Ping";
 
@@ -105,6 +147,30 @@ function validateStoragePath(path: string): string | null {
   if (!path) return "A storage path is required.";
   if (!path.startsWith("/")) return "A Flipper storage path must start with a slash, e.g. /ext.";
   if (path.split("/").includes("..")) return "The path may not contain '..'.";
+  return null;
+}
+
+/**
+ * Stricter rules for the one write-capable operation: the firmware rejects
+ * non-ASCII paths outright, caps the path at 255 characters, and this phase
+ * only ever writes inside `/ext/`.
+ */
+function validateWritePath(path: string): string | null {
+  const basic = validateStoragePath(path);
+  if (basic) return basic;
+  if (!path.startsWith(WRITE_NAMESPACE) || path.length <= WRITE_NAMESPACE.length) {
+    return `Files can only be created inside ${WRITE_NAMESPACE} in this version.`;
+  }
+  if (path.endsWith("/")) return "A file name is required.";
+  if (path.length > MAX_PATH_LENGTH) {
+    return `The path is longer than the ${MAX_PATH_LENGTH} characters the Flipper accepts.`;
+  }
+  for (const char of path) {
+    const code = char.charCodeAt(0);
+    if (code < 0x20 || code > 0x7e) {
+      return "The Flipper only accepts plain ASCII characters in a path.";
+    }
+  }
   return null;
 }
 
