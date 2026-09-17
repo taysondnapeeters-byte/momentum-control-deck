@@ -40,6 +40,7 @@ interface AppStateValue {
   pingFlipper: () => Promise<RpcPingResult>;
   refreshDeviceInfo: () => Promise<RpcDeviceInfoResult>;
   refreshPowerInfo: () => Promise<RpcPowerInfoResult>;
+  refreshStorageList: (path: string) => Promise<StorageListResult>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
