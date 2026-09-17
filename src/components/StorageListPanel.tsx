@@ -19,17 +19,46 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * Read-only Storage List. One request per button press — no polling, and no
- * read, write, delete, rename or execute actions of any kind.
+ * Read-only Storage List plus a read-only single-file viewer. No write,
+ * delete, rename or execute actions of any kind.
  */
 export function StorageListPanel() {
-  const { rpc, refreshStorageList, settings, ble } = useAppState();
+  const { rpc, refreshStorageList, refreshStorageStat, readStorageFile, settings, ble } =
+    useAppState();
   const [loading, setLoading] = useState(false);
+  const [readingPath, setReadingPath] = useState<string | null>(null);
+  const [stat, setStat] = useState<StorageStatResult | null>(null);
+  const [read, setRead] = useState<StorageReadResult | null>(null);
+  const [tooLarge, setTooLarge] = useState<string | null>(null);
 
   const connected = ble.state === "connected";
   const mock = settings.mockMode && !connected;
   const result = rpc.lastStorageList;
   const canRequest = mock || rpc.ready;
+
+  /** Stat first, then read — and only when the file fits the safety limit. */
+  async function openFile(name: string) {
+    const base = result?.path ?? DEFAULT_PATH;
+    const path = `${base.replace(/\/$/, "")}/${name}`;
+    setReadingPath(path);
+    setStat(null);
+    setRead(null);
+    setTooLarge(null);
+    try {
+      const statResult = await refreshStorageStat(path);
+      setStat(statResult);
+      if (!statResult.ok || !statResult.entry) return;
+      if (statResult.entry.size > MAX_READ_BYTES) {
+        setTooLarge(
+          `This file is ${statResult.entry.size} bytes, which is larger than the ${MAX_READ_BYTES} byte limit of the current read mode. It was not read.`,
+        );
+        return;
+      }
+      setRead(await readStorageFile(path));
+    } finally {
+      setReadingPath(null);
+    }
+  }
 
   return (
     <Panel className="mt-4">
