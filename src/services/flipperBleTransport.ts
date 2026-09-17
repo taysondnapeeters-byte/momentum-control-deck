@@ -84,6 +84,7 @@ class MomentumBleTransport implements FlipperBleTransport {
   private error: string | null = null;
   private device: BluetoothDevice | null = null;
   private discovery: DiscoveryReport | null = null;
+  private diagnostic: DiagnosticReport | null = null;
   private log: BleLogEntry[] = [];
   private raw: BleRawEntry[] = [];
   private listeners = new Set<(snapshot: BleSnapshot) => void>();
