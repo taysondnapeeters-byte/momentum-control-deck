@@ -66,6 +66,33 @@ const WRITE_TIMEOUT_MS = 60000;
 /** Firmware limit from the protobuf options (`PB_Storage.*.path max_length`). */
 const MAX_PATH_LENGTH = 255;
 
+/** `PB_Gui.ScreenOrientation` values, in protobuf order. */
+const ORIENTATIONS: ScreenOrientation[] = [
+  "horizontal",
+  "horizontal_flip",
+  "vertical",
+  "vertical_flip",
+];
+
+/** `PB_Gui.InputKey` values for the six physical keys. */
+const INPUT_KEYS: Record<FlipperInputKey, number> = {
+  up: 0,
+  down: 1,
+  right: 2,
+  left: 3,
+  ok: 4,
+  back: 5,
+};
+
+/** `PB_Gui.InputType` values. Only press/release are used today. */
+const INPUT_TYPES: Record<FlipperInputAction, number> = {
+  press: 0,
+  release: 1,
+  short: 2,
+  long: 3,
+  repeat: 4,
+};
+
 /** Mock-mode only. Clearly simulated content — never device data. */
 const MOCK_FILE_NAME = "momentum-demo.txt";
 const MOCK_FILE_BYTES = new TextEncoder().encode(
