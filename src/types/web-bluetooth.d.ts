@@ -69,6 +69,8 @@ declare global {
   interface Bluetooth {
     getAvailability(): Promise<boolean>;
     requestDevice(options?: RequestDeviceOptions): Promise<BluetoothDevice>;
+    /** Chrome-only: devices the user already permitted. May be absent. */
+    getDevices?(): Promise<BluetoothDevice[]>;
   }
 
   interface Navigator {

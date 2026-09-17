@@ -7,6 +7,8 @@ export interface AppSettings {
   geminiApiKey: string | null;
   /** When true the app shows interface placeholders only — never real hardware data. */
   mockMode: boolean;
+  /** Last visited Flipper storage path. Display only — never auto-queried. */
+  lastStoragePath: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -14,4 +16,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   geminiApiKey: null,
   mockMode: true,
+  lastStoragePath: "/ext",
 };

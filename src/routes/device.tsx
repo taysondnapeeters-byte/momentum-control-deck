@@ -13,7 +13,7 @@ import {
 import { DeviceInfoPanel } from "@/components/DeviceInfoPanel";
 import { PowerInfoPanel } from "@/components/PowerInfoPanel";
 import { RpcPanel } from "@/components/RpcPanel";
-import { StorageListPanel } from "@/components/StorageListPanel";
+
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAppState } from "@/state/AppStateProvider";
@@ -59,6 +59,9 @@ function DevicePage() {
     disconnectFlipper,
     clearBleLogs,
     setMockMode,
+    knownDevices,
+    reconnectSupported,
+    reconnectFlipper,
   } = useAppState();
 
   const state = ble.state;
@@ -136,6 +139,35 @@ function DevicePage() {
           </Button>
         ) : (
           <>
+            {bluetoothSupported && knownDevices.length > 0 ? (
+              <div className="mt-5 rounded-xl border border-border bg-surface-2 p-3">
+                <p className="text-sm font-medium">Previously connected Flipper</p>
+                {knownDevices.map((device) => (
+                  <div key={device.id} className="mt-2 flex items-center gap-2">
+                    <span className="min-w-0 flex-1 break-all font-mono text-xs text-muted-foreground">
+                      {device.name ?? "Unnamed device"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-10 shrink-0 rounded-lg px-4 text-sm"
+                      disabled={busy}
+                      onClick={() => void reconnectFlipper(device.id)}
+                    >
+                      Reconnect
+                    </Button>
+                  </div>
+                ))}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Nothing connects on its own — reconnecting always needs this button.
+                </p>
+              </div>
+            ) : bluetoothSupported && !reconnectSupported ? (
+              <p className="mt-5 text-xs text-muted-foreground">
+                This browser cannot offer a one-tap reconnect to a Flipper you already
+                permitted, so use Normal Connect after a page refresh.
+              </p>
+            ) : null}
             <Button
               size="lg"
               className="mt-5 h-12 w-full rounded-xl text-base"
@@ -198,7 +230,6 @@ function DevicePage() {
 
       <PowerInfoPanel />
 
-      <StorageListPanel />
 
       <Panel className="mt-4">
         <div className="flex items-start justify-between gap-4">

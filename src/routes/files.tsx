@@ -1,35 +1,190 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { FolderClosed } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  File as FileIcon,
+  Folder,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 
-import { Panel, PageShell } from "@/components/PageShell";
+import { Panel, PageShell, StatusPill } from "@/components/PageShell";
+import { Button } from "@/components/ui/button";
+import { FileViewerPanel } from "@/components/FileViewerPanel";
+import { useAppState } from "@/state/AppStateProvider";
 
 export const Route = createFileRoute("/files")({
   head: () => ({
     meta: [
       { title: "Files — Momentum Deck" },
-      { name: "description", content: "Browse supported Flipper Zero files from your phone." },
+      {
+        name: "description",
+        content: "Browse the Flipper Zero SD card read-only from your phone.",
+      },
       { property: "og:title", content: "Files — Momentum Deck" },
       {
         property: "og:description",
-        content: "Browse supported Flipper Zero files from your phone.",
+        content: "Browse the Flipper Zero SD card read-only from your phone.",
       },
     ],
   }),
   component: FilesPage,
 });
 
+const ROOT_PATH = "/ext";
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function FilesPage() {
+  const {
+    ble,
+    settings,
+    rpc,
+    storagePath,
+    storageList,
+    storageLoading,
+    storageReadLoading,
+    selectedFile,
+    refreshStorageList,
+    navigateIntoStorageDirectory,
+    navigateBackStorageDirectory,
+    openStorageFile,
+    closeStorageFile,
+  } = useAppState();
+
+  const connected = ble.state === "connected";
+  const mock = settings.mockMode && !connected;
+  const canBrowse = mock || rpc.ready;
+  const busy = storageLoading || storageReadLoading;
+  const listing = storageList && storageList.path === storagePath ? storageList : null;
+
   return (
-    <PageShell title="Files" subtitle="Storage browser.">
-      <Panel className="flex flex-col items-center gap-3 py-12 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-2">
-          <FolderClosed className="h-7 w-7 text-muted-foreground" strokeWidth={1.6} />
+    <PageShell title="Files" subtitle="Read-only storage browser.">
+      <div className="mb-4">
+        <StatusPill tone={connected ? "signal" : mock ? "danger" : "muted"}>
+          {connected ? "Real hardware" : mock ? "Mock filesystem" : "Not connected"}
+        </StatusPill>
+      </div>
+
+      <Panel>
+        <div className="flex items-center gap-2">
+          {storagePath !== ROOT_PATH ? (
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-10 w-10 shrink-0 rounded-xl"
+              aria-label="Back to parent folder"
+              disabled={!canBrowse || busy}
+              onClick={() => void navigateBackStorageDirectory()}
+            >
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+            </Button>
+          ) : null}
+          <p className="min-w-0 flex-1 break-all font-mono text-xs text-muted-foreground">
+            {storagePath}
+          </p>
+          <Button
+            size="icon"
+            variant="outline"
+            className="h-10 w-10 shrink-0 rounded-xl"
+            aria-label="Refresh this folder"
+            disabled={!canBrowse || busy}
+            onClick={() => void refreshStorageList()}
+          >
+            {storageLoading ? (
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="h-5 w-5" aria-hidden="true" />
+            )}
+          </Button>
         </div>
-        <h2 className="text-lg font-semibold">Flipper Files</h2>
-        <p className="max-w-[24rem] text-sm text-muted-foreground">
-          Connect a Flipper to browse supported files.
-        </p>
+
+        {!canBrowse ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Connect a Flipper to browse files.
+          </p>
+        ) : !listing ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Press refresh to load this folder from {mock ? "the simulated filesystem" : "your Flipper"}.
+          </p>
+        ) : listing.error ? (
+          <p className="mt-4 break-words text-sm text-destructive">{listing.error}</p>
+        ) : listing.entries.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground">This directory is empty.</p>
+        ) : (
+          <ul className="mt-4 space-y-1">
+            {listing.entries.map((entry, index) => (
+              <li key={`${entry.type}-${entry.name}-${index}`}>
+                {entry.type === "dir" ? (
+                  <button
+                    type="button"
+                    className="flex w-full min-h-11 items-center gap-2 rounded-xl px-2 py-2 text-left hover:bg-surface-2 disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => void navigateIntoStorageDirectory(entry.name)}
+                  >
+                    <Folder className="h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 break-all text-sm">{entry.name}</span>
+                    <ChevronRight
+                      className="h-4 w-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  </button>
+                ) : (
+                  <div className="flex min-h-11 items-center gap-2 rounded-xl px-2 py-2">
+                    <FileIcon
+                      className="h-4 w-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 break-all text-sm">{entry.name}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                      {formatSize(entry.size)}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-9 shrink-0 rounded-lg px-3 text-xs"
+                      disabled={busy}
+                      onClick={() => void openStorageFile(entry.name)}
+                    >
+                      {storageReadLoading && selectedFile?.name === entry.name ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        "Read"
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </Panel>
+
+      {selectedFile ? (
+        <Panel className="mt-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="min-w-0 break-all text-sm font-semibold">{selectedFile.name}</h3>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-9 shrink-0 rounded-lg px-3 text-xs"
+              onClick={closeStorageFile}
+            >
+              Close
+            </Button>
+          </div>
+          <FileViewerPanel
+            stat={selectedFile.stat}
+            read={selectedFile.read}
+            loading={storageReadLoading}
+            tooLarge={selectedFile.tooLarge}
+          />
+        </Panel>
+      ) : null}
     </PageShell>
   );
 }

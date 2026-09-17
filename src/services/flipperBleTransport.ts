@@ -197,6 +197,70 @@ class MomentumBleTransport implements FlipperBleTransport {
       return;
     }
 
+    await this.attach(device);
+  }
+
+  /**
+   * Devices the user already permitted in this browser profile. Chrome-only
+   * and can be disabled, so the caller must handle an empty list.
+   */
+  async listKnownDevices(): Promise<{ id: string; name: string | null }[]> {
+    const bluetooth = typeof navigator !== "undefined" ? navigator.bluetooth : undefined;
+    if (!bluetooth?.getDevices) return [];
+    try {
+      const devices = await bluetooth.getDevices();
+      return devices.map((d) => ({ id: d.id, name: d.name ?? null }));
+    } catch (error) {
+      this.addLog("warn", `Known device lookup failed: ${describeError(error)}`);
+      return [];
+    }
+  }
+
+  /** True only when the browser actually exposes the known-devices API. */
+  supportsReconnect(): boolean {
+    return (
+      typeof navigator !== "undefined" && Boolean(navigator.bluetooth?.getDevices)
+    );
+  }
+
+  /**
+   * Connects to a previously permitted device without opening the chooser.
+   * Reuses the exact same post-selection sequence as `connect()`.
+   */
+  async reconnect(id: string): Promise<void> {
+    if (!this.isSupported()) {
+      this.fail("Web Bluetooth is not available in this browser.");
+      return;
+    }
+    if (!this.supportsReconnect()) {
+      this.fail("This browser cannot reconnect to a previously permitted device.");
+      return;
+    }
+    if (this.state !== "disconnected" && this.state !== "error") return;
+
+    this.error = null;
+    this.discovery = null;
+    this.setState("requesting");
+    this.addLog("info", "Reconnect requested (previously permitted device)");
+
+    let device: BluetoothDevice | undefined;
+    try {
+      const devices = await navigator.bluetooth!.getDevices!();
+      device = devices.find((d) => d.id === id);
+    } catch (error) {
+      this.fail(describeError(error));
+      return;
+    }
+    if (!device) {
+      this.fail("That Flipper is no longer available to this browser. Use Connect Flipper.");
+      return;
+    }
+
+    await this.attach(device);
+  }
+
+  /** Shared connection sequence: GATT, FE60, FE61–FE64, notifications. */
+  private async attach(device: BluetoothDevice): Promise<void> {
     this.device = device;
     this.addLog("info", `Device selected${device.name ? `: ${device.name}` : ""}`);
     device.addEventListener("gattserverdisconnected", this.onGattDisconnected);

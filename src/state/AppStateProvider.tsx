@@ -23,7 +23,7 @@ import type {
   StorageStatResult,
 } from "@/services";
 import { getFlipperBleTransport } from "@/services/flipperBleTransport";
-import { getFlipperRpc } from "@/services/flipperRpc";
+import { getFlipperRpc, MAX_READ_BYTES } from "@/services/flipperRpc";
 
 const transport = getFlipperBleTransport();
 const rpc = getFlipperRpc();
@@ -42,9 +42,23 @@ interface AppStateValue {
   pingFlipper: () => Promise<RpcPingResult>;
   refreshDeviceInfo: () => Promise<RpcDeviceInfoResult>;
   refreshPowerInfo: () => Promise<RpcPowerInfoResult>;
-  refreshStorageList: (path: string) => Promise<StorageListResult>;
   refreshStorageStat: (path: string) => Promise<StorageStatResult>;
   readStorageFile: (path: string) => Promise<StorageReadResult>;
+  /** Read-only filesystem browser state. The Flipper is the source of truth. */
+  storagePath: string;
+  storageLoading: boolean;
+  storageReadLoading: boolean;
+  storageList: StorageListResult | null;
+  selectedFile: SelectedFile | null;
+  refreshStorageList: (path?: string) => Promise<void>;
+  navigateIntoStorageDirectory: (name: string) => Promise<void>;
+  navigateBackStorageDirectory: () => Promise<void>;
+  openStorageFile: (name: string) => Promise<void>;
+  closeStorageFile: () => void;
+  /** Explicit reconnect to a previously permitted device, where supported. */
+  reconnectSupported: boolean;
+  knownDevices: { id: string; name: string | null }[];
+  reconnectFlipper: (id: string) => Promise<void>;
   connectFlipper: () => Promise<void>;
   runBleDiagnostic: () => Promise<void>;
   disconnectFlipper: () => Promise<void>;
@@ -59,6 +73,18 @@ interface AppStateValue {
   clearAllData: () => Promise<void>;
 }
 
+/** The one file the user explicitly opened, with its Stat and Read results. */
+export interface SelectedFile {
+  path: string;
+  name: string;
+  stat: StorageStatResult | null;
+  read: StorageReadResult | null;
+  /** Set when the file was not read because it exceeds the safety limit. */
+  tooLarge: string | null;
+}
+
+const ROOT_PATH = "/ext";
+
 const AppStateContext = createContext<AppStateValue | null>(null);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
@@ -68,6 +94,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [ble, setBle] = useState<BleSnapshot>(() => transport.getSnapshot());
   const [bluetoothSupported, setBluetoothSupported] = useState(false);
   const [rpcState, setRpcState] = useState<RpcSnapshot>(() => rpc.getSnapshot());
+  const [storagePath, setStoragePath] = useState<string>(ROOT_PATH);
+  const [storageList, setStorageList] = useState<StorageListResult | null>(null);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageReadLoading, setStorageReadLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+  const [reconnectSupported, setReconnectSupported] = useState(false);
+  const [knownDevices, setKnownDevices] = useState<{ id: string; name: string | null }[]>([]);
 
   useEffect(() => {
     setBluetoothSupported(transport.isSupported());
@@ -80,6 +113,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return rpc.subscribe(setRpcState);
   }, []);
 
+  // Previously permitted devices. This never prompts and never connects.
+  useEffect(() => {
+    let cancelled = false;
+    setReconnectSupported(transport.supportsReconnect());
+    void transport.listKnownDevices().then((devices) => {
+      if (!cancelled) setKnownDevices(devices);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A lost connection stops the browser cleanly; the path is kept.
+  useEffect(() => {
+    if (ble.state === "connected") return;
+    setStorageLoading(false);
+    setStorageReadLoading(false);
+  }, [ble.state]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -90,7 +142,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         ]);
         if (cancelled) return;
         if (storedDeck?.buttons) setDeck(storedDeck);
-        if (storedSettings) setSettings({ ...DEFAULT_SETTINGS, ...storedSettings });
+        if (storedSettings) {
+          const merged = { ...DEFAULT_SETTINGS, ...storedSettings };
+          setSettings(merged);
+          // Display only — no Storage RPC is issued until the user asks.
+          setStoragePath(merged.lastStoragePath || ROOT_PATH);
+        }
       } catch (error) {
         console.error("Local data could not be loaded", error);
       } finally {
@@ -124,6 +181,160 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       console.error("Settings could not be saved", error);
     }
   }, []);
+
+  // — read-only filesystem browser —
+
+  const mockActive = settings.mockMode && ble.state !== "connected";
+
+  const listAt = useCallback(
+    async (path: string): Promise<StorageListResult> => {
+      // Mock mode never touches the radio and is always labelled as mock.
+      if (mockActive) return rpc.mockStorageList(path);
+      try {
+        return await rpc.listStorage(path);
+      } catch (error) {
+        console.error("Storage List failed", error);
+        return {
+          ok: false,
+          mock: false,
+          commandId: null,
+          path,
+          roundTripMs: null,
+          entries: [],
+          txHex: null,
+          rxHex: null,
+          status: null,
+          error: error instanceof Error ? error.message : "Unknown RPC error.",
+          at: Date.now(),
+        };
+      }
+    },
+    [mockActive],
+  );
+
+  const statAt = useCallback(
+    async (path: string): Promise<StorageStatResult> => {
+      if (mockActive) return rpc.mockStorageStat(path);
+      try {
+        return await rpc.statStorage(path);
+      } catch (error) {
+        console.error("Storage Stat failed", error);
+        return {
+          ok: false,
+          mock: false,
+          commandId: null,
+          path,
+          entry: null,
+          roundTripMs: null,
+          txHex: null,
+          rxHex: null,
+          status: null,
+          error: error instanceof Error ? error.message : "Unknown RPC error.",
+          at: Date.now(),
+        };
+      }
+    },
+    [mockActive],
+  );
+
+  const readAt = useCallback(
+    async (path: string): Promise<StorageReadResult> => {
+      if (mockActive) return rpc.mockStorageRead(path);
+      try {
+        return await rpc.readStorage(path);
+      } catch (error) {
+        console.error("Storage Read failed", error);
+        return {
+          ok: false,
+          mock: false,
+          commandId: null,
+          path,
+          size: 0,
+          data: new Uint8Array(0),
+          roundTripMs: null,
+          txHex: null,
+          rxHex: null,
+          status: null,
+          error: error instanceof Error ? error.message : "Unknown RPC error.",
+          at: Date.now(),
+        };
+      }
+    },
+    [mockActive],
+  );
+
+  const busyStorage = storageLoading || storageReadLoading;
+
+  /** One listing at a time; the path is remembered for the next session. */
+  const loadPath = useCallback(
+    async (path?: string) => {
+      const target = path ?? storagePath;
+      if (busyStorage) return;
+      setStorageLoading(true);
+      try {
+        const result = await listAt(target);
+        setStoragePath(target);
+        setStorageList(result);
+        // Only the path string is persisted; never a Bluetooth object.
+        setSettings((current) => {
+          if (current.lastStoragePath === target) return current;
+          const next = { ...current, lastStoragePath: target };
+          void idbSet(KEY_SETTINGS, next);
+          return next;
+        });
+      } finally {
+        setStorageLoading(false);
+      }
+    },
+    [busyStorage, listAt, storagePath],
+  );
+
+  const navigateInto = useCallback(
+    async (name: string) => {
+      if (busyStorage) return;
+      const next = `${storagePath.replace(/\/$/, "")}/${name}`;
+      setSelectedFile(null);
+      await loadPath(next);
+    },
+    [busyStorage, loadPath, storagePath],
+  );
+
+  const navigateBack = useCallback(async () => {
+    if (busyStorage || storagePath === ROOT_PATH) return;
+    const parent = storagePath.slice(0, storagePath.lastIndexOf("/")) || ROOT_PATH;
+    setSelectedFile(null);
+    await loadPath(parent.length < ROOT_PATH.length ? ROOT_PATH : parent);
+  }, [busyStorage, loadPath, storagePath]);
+
+  /** Stat first, then read — and only when the file fits the safety limit. */
+  const openFile = useCallback(
+    async (name: string) => {
+      if (busyStorage) return;
+      const path = `${storagePath.replace(/\/$/, "")}/${name}`;
+      setStorageReadLoading(true);
+      setSelectedFile({ path, name, stat: null, read: null, tooLarge: null });
+      try {
+        const stat = await statAt(path);
+        setSelectedFile({ path, name, stat, read: null, tooLarge: null });
+        if (!stat.ok || !stat.entry) return;
+        if (stat.entry.size > MAX_READ_BYTES) {
+          setSelectedFile({
+            path,
+            name,
+            stat,
+            read: null,
+            tooLarge: `This file is ${stat.entry.size} bytes, which is larger than the ${MAX_READ_BYTES} byte limit of the current read mode. It was not read.`,
+          });
+          return;
+        }
+        const read = await readAt(path);
+        setSelectedFile({ path, name, stat, read, tooLarge: null });
+      } finally {
+        setStorageReadLoading(false);
+      }
+    },
+    [busyStorage, readAt, statAt, storagePath],
+  );
 
   const value = useMemo<AppStateValue>(
     () => ({
@@ -196,71 +407,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           };
         }
       },
-      refreshStorageList: async (path) => {
-        // Mock mode never touches the radio and is always labelled as mock.
-        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageList(path);
+      refreshStorageStat: statAt,
+      readStorageFile: readAt,
+      storagePath,
+      storageLoading,
+      storageReadLoading,
+      storageList,
+      selectedFile,
+      refreshStorageList: loadPath,
+      navigateIntoStorageDirectory: navigateInto,
+      navigateBackStorageDirectory: navigateBack,
+      openStorageFile: openFile,
+      closeStorageFile: () => setSelectedFile(null),
+      reconnectSupported,
+      knownDevices,
+      reconnectFlipper: async (id) => {
         try {
-          return await rpc.listStorage(path);
+          await transport.reconnect(id);
         } catch (error) {
-          console.error("Storage List failed", error);
-          return rpc.getSnapshot().lastStorageList ?? {
-            ok: false,
-            mock: false,
-            commandId: null,
-            path,
-            roundTripMs: null,
-            entries: [],
-            txHex: null,
-            rxHex: null,
-            status: null,
-            error: error instanceof Error ? error.message : "Unknown RPC error.",
-            at: Date.now(),
-          };
-        }
-      },
-      refreshStorageStat: async (path) => {
-        // Mock mode never touches the radio and is always labelled as mock.
-        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageStat(path);
-        try {
-          return await rpc.statStorage(path);
-        } catch (error) {
-          console.error("Storage Stat failed", error);
-          return rpc.getSnapshot().lastStorageStat ?? {
-            ok: false,
-            mock: false,
-            commandId: null,
-            path,
-            entry: null,
-            roundTripMs: null,
-            txHex: null,
-            rxHex: null,
-            status: null,
-            error: error instanceof Error ? error.message : "Unknown RPC error.",
-            at: Date.now(),
-          };
-        }
-      },
-      readStorageFile: async (path) => {
-        // Mock mode never touches the radio and is always labelled as mock.
-        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageRead(path);
-        try {
-          return await rpc.readStorage(path);
-        } catch (error) {
-          console.error("Storage Read failed", error);
-          return rpc.getSnapshot().lastStorageRead ?? {
-            ok: false,
-            mock: false,
-            commandId: null,
-            path,
-            size: 0,
-            data: new Uint8Array(0),
-            roundTripMs: null,
-            txHex: null,
-            rxHex: null,
-            status: null,
-            error: error instanceof Error ? error.message : "Unknown RPC error.",
-            at: Date.now(),
-          };
+          console.error("Bluetooth reconnect failed", error);
         }
       },
       connectFlipper: async () => {
@@ -316,7 +481,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setSettings(DEFAULT_SETTINGS);
       },
     }),
-    [ready, deck, settings, ble, rpcState, bluetoothSupported, persistDeck, persistSettings],
+    [
+      ready,
+      deck,
+      settings,
+      ble,
+      rpcState,
+      bluetoothSupported,
+      persistDeck,
+      persistSettings,
+      statAt,
+      readAt,
+      loadPath,
+      navigateInto,
+      navigateBack,
+      openFile,
+      storagePath,
+      storageList,
+      storageLoading,
+      storageReadLoading,
+      selectedFile,
+      reconnectSupported,
+      knownDevices,
+    ],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
