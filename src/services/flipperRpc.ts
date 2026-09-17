@@ -112,6 +112,7 @@ class MomentumRpc {
       lastPing: this.lastPing,
       lastDeviceInfo: this.lastDeviceInfo,
       lastPowerInfo: this.lastPowerInfo,
+      lastStorageList: this.lastStorageList,
     };
   }
 
