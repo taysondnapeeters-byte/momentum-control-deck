@@ -11635,6 +11635,8 @@ export const PB_Gui = $root.PB_Gui = (() => {
          * @typedef {Object} PB_Gui.ScreenFrame.$Properties
          * @property {Uint8Array|null} [data] ScreenFrame data
          * @property {PB_Gui.ScreenOrientation|null} [orientation] ScreenFrame orientation
+         * @property {number|null} [bgColor] ScreenFrame bgColor
+         * @property {number|null} [fgColor] ScreenFrame fgColor
          * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
          */
 
@@ -11683,6 +11685,22 @@ export const PB_Gui = $root.PB_Gui = (() => {
         ScreenFrame.prototype.orientation = 0;
 
         /**
+         * ScreenFrame bgColor.
+         * @member {number} bgColor
+         * @memberof PB_Gui.ScreenFrame
+         * @instance
+         */
+        ScreenFrame.prototype.bgColor = 0;
+
+        /**
+         * ScreenFrame fgColor.
+         * @member {number} fgColor
+         * @memberof PB_Gui.ScreenFrame
+         * @instance
+         */
+        ScreenFrame.prototype.fgColor = 0;
+
+        /**
          * Encodes the specified ScreenFrame message. Does not implicitly {@link PB_Gui.ScreenFrame.verify|verify} messages.
          * @function encode
          * @memberof PB_Gui.ScreenFrame
@@ -11702,6 +11720,10 @@ export const PB_Gui = $root.PB_Gui = (() => {
                 writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.data);
             if (message.orientation != null && $Object.hasOwnProperty.call(message, "orientation") && message.orientation !== 0)
                 writer.uint32(/* id 2, wireType 0 =*/16).int32(message.orientation);
+            if (message.bgColor != null && $Object.hasOwnProperty.call(message, "bgColor") && message.bgColor !== 0)
+                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.bgColor);
+            if (message.fgColor != null && $Object.hasOwnProperty.call(message, "fgColor") && message.fgColor !== 0)
+                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.fgColor);
             if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                 for (let i = 0; i < message.$unknowns.length; ++i)
                     writer.raw(message.$unknowns[i]);
@@ -11775,6 +11797,24 @@ export const PB_Gui = $root.PB_Gui = (() => {
                             message.orientation = value;
                         else
                             delete message.orientation;
+                        continue;
+                    }
+                case 3: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.uint32())
+                            message.bgColor = value;
+                        else
+                            delete message.bgColor;
+                        continue;
+                    }
+                case 4: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.uint32())
+                            message.fgColor = value;
+                        else
+                            delete message.fgColor;
                         continue;
                     }
                 }

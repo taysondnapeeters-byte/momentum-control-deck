@@ -5250,6 +5250,12 @@ export namespace PB_Gui {
         /** ScreenFrame orientation. */
         orientation: PB_Gui.ScreenOrientation;
 
+        /** ScreenFrame bgColor. */
+        bgColor: number;
+
+        /** ScreenFrame fgColor. */
+        fgColor: number;
+
         /**
          * Encodes the specified ScreenFrame message. Does not implicitly {@link PB_Gui.ScreenFrame.verify|verify} messages.
          * @param message ScreenFrame message or plain object to encode
@@ -5303,6 +5309,12 @@ export namespace PB_Gui {
 
             /** ScreenFrame orientation */
             orientation?: (PB_Gui.ScreenOrientation|null);
+
+            /** ScreenFrame bgColor */
+            bgColor?: (number|null);
+
+            /** ScreenFrame fgColor */
+            fgColor?: (number|null);
 
             /** Unknown fields preserved while decoding when enabled */
             $unknowns?: Uint8Array[];
