@@ -188,20 +188,27 @@ class MomentumBleTransport implements FlipperBleTransport {
       await gatt.connect();
       this.addLog("info", "GATT connected");
 
+      // Log the advertising profile only when the browser can actually confirm
+      // it (via watchAdvertisements). Not all browsers support this; when they
+      // do not, the entry is simply not logged.
+      const detected = await this.detectAdvertising(device);
+      if (detected) this.addLog("info", "Momentum advertising profile detected");
+
       this.setState("discovering");
       const discovery = emptyDiscovery();
       this.discovery = discovery;
+      this.addLog("info", "GATT service discovery started");
 
       let service;
       try {
         service = await gatt.getPrimaryService(MOMENTUM_SERIAL_SERVICE);
-      } catch {
+      } catch (error) {
         throw new Error(
-          "The Momentum serial service was not found on this device. It may not be a Flipper running Momentum Firmware, or BLE serial is disabled.",
+          `Momentum Serial Service (FE60) could not be discovered: ${describeError(error)}`,
         );
       }
       discovery.serviceFound = true;
-      this.addLog("info", "Momentum Serial Service discovered");
+      this.addLog("info", "Momentum Serial Service found");
 
       for (const entry of discovery.characteristics) {
         try {
