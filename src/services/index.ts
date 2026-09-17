@@ -340,6 +340,14 @@ export interface FlipperRpc {
   readStorage(path: string): Promise<StorageReadResult>;
   /** Creates a file. The caller must have confirmed the path does not exist. */
   writeStorage(path: string, bytes: Uint8Array): Promise<StorageWriteResult>;
+  /** Starts the GUI screen stream. Frames then arrive unsolicited. */
+  startScreenStream(): Promise<RpcSimpleResult>;
+  /** Stops the GUI screen stream. */
+  stopScreenStream(): Promise<RpcSimpleResult>;
+  /** Sends one GUI input event (press/release pairing is the caller's job). */
+  sendInputEvent(key: FlipperInputKey, action: FlipperInputAction): Promise<RpcSimpleResult>;
+  /** Subscribes to unsolicited screen frames. Returns an unsubscribe function. */
+  onScreenFrame(listener: (frame: ScreenFrameEvent) => void): () => void;
 }
 
 export interface FlipperDevice {
