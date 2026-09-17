@@ -1543,11 +1543,28 @@ class MomentumRpc {
     key: FlipperInputKey,
     action: FlipperInputAction,
   ): Promise<RpcSimpleResult> {
-    return this.simpleRequest(`Input ${key} ${action}`, {
-      commandStatus: PB.CommandStatus.OK,
-      hasNext: false,
-      guiSendInputEventRequest: { key: INPUT_KEYS[key], type: INPUT_TYPES[action] },
-    });
+    const keyValue = INPUT_KEYS[key];
+    const typeValue = INPUT_TYPES[action];
+    console.log(`Virtual Flipper input RPC:\nkey=${keyValue}\ntype=${typeValue}`);
+    const result = await this.simpleRequest(
+      `Input ${key} ${action}`,
+      {
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        guiSendInputEventRequest: { key: keyValue, type: typeValue },
+      },
+      { logTxHex: true },
+    );
+    if (result.status !== null) {
+      console.log(
+        `Virtual Flipper input RPC result:\nkey=${keyValue}\ntype=${typeValue}\nstatus=${result.status}`,
+      );
+    } else {
+      console.log(
+        `Virtual Flipper input RPC error:\nkey=${keyValue}\ntype=${typeValue}\nerror=${result.error ?? "unknown"}`,
+      );
+    }
+    return result;
   }
 
   /** Mock-mode equivalents. Nothing is transmitted and nothing is decoded. */
@@ -1564,10 +1581,15 @@ class MomentumRpc {
     };
   }
 
-  /** Shared single-response request helper used by the GUI operations. */
+  /**
+   * Shared single-response request helper used by the GUI operations.
+   * `opts.logTxHex` mirrors the outgoing frame into the capped connection log
+   * (used for input-event wire-format diagnostics only).
+   */
   private async simpleRequest(
     label: string,
     main: PB.Main.$Shape,
+    opts?: { logTxHex?: boolean },
   ): Promise<RpcSimpleResult> {
     const at = Date.now();
     if (!this.transport.canTransfer() || !this.ready) {
