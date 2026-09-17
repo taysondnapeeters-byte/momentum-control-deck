@@ -43,6 +43,12 @@ const READ_TIMEOUT_MS = 30000;
  * this are never fetched; nothing is ever truncated silently. Easy to raise.
  */
 export const MAX_READ_BYTES = 64 * 1024;
+
+/** Mock-mode only. Clearly simulated content — never device data. */
+const MOCK_FILE_NAME = "momentum-demo.txt";
+const MOCK_FILE_BYTES = new TextEncoder().encode(
+  "Mock file — simulated contents.\nNo Flipper was contacted and nothing was transmitted.\n",
+);
 const PING_PAYLOAD = "Momentum Deck Ping";
 
 function toHex(bytes: Uint8Array): string {
@@ -1311,6 +1317,49 @@ class MomentumRpc {
       at: Date.now(),
     };
     this.lastStorageList = result;
+    this.emit();
+    return result;
+  }
+
+  private finishStorageStat(
+    partial: Partial<StorageStatResult> & { ok: boolean; path: string },
+  ): StorageStatResult {
+    const result: StorageStatResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      entry: partial.entry ?? null,
+      roundTripMs: partial.roundTripMs ?? null,
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastStorageStat = result;
+    this.emit();
+    return result;
+  }
+
+  private finishStorageRead(
+    partial: Partial<StorageReadResult> & { ok: boolean; path: string },
+  ): StorageReadResult {
+    const result: StorageReadResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      size: partial.size ?? 0,
+      data: partial.data ?? new Uint8Array(0),
+      roundTripMs: partial.roundTripMs ?? null,
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastStorageRead = result;
     this.emit();
     return result;
   }
