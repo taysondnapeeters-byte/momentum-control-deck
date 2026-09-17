@@ -6,6 +6,7 @@ import { Panel, PageShell, StatusPill } from "@/components/PageShell";
 import {
   CharacteristicTable,
   ConnectionLog,
+  DiagnosticResult,
   InfoRow,
   RawDataLog,
 } from "@/components/DeviceDiagnostics";
