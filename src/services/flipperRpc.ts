@@ -17,6 +17,11 @@ import { PB } from "@/proto/flipper_pb.js";
 import type {
   CharacteristicKey,
   FlipperBleTransport,
+  FlipperInputAction,
+  FlipperInputKey,
+  RpcSimpleResult,
+  ScreenFrameEvent,
+  ScreenOrientation,
   RpcDeviceInfoEntry,
   RpcDeviceInfoResult,
   RpcPingResult,
@@ -60,6 +65,33 @@ export const WRITE_NAMESPACE = "/ext/";
 const WRITE_TIMEOUT_MS = 60000;
 /** Firmware limit from the protobuf options (`PB_Storage.*.path max_length`). */
 const MAX_PATH_LENGTH = 255;
+
+/** `PB_Gui.ScreenOrientation` values, in protobuf order. */
+const ORIENTATIONS: ScreenOrientation[] = [
+  "horizontal",
+  "horizontal_flip",
+  "vertical",
+  "vertical_flip",
+];
+
+/** `PB_Gui.InputKey` values for the six physical keys. */
+const INPUT_KEYS: Record<FlipperInputKey, number> = {
+  up: 0,
+  down: 1,
+  right: 2,
+  left: 3,
+  ok: 4,
+  back: 5,
+};
+
+/** `PB_Gui.InputType` values. Only press/release are used today. */
+const INPUT_TYPES: Record<FlipperInputAction, number> = {
+  press: 0,
+  release: 1,
+  short: 2,
+  long: 3,
+  repeat: 4,
+};
 
 /** Mock-mode only. Clearly simulated content — never device data. */
 const MOCK_FILE_NAME = "momentum-demo.txt";
@@ -241,6 +273,10 @@ class MomentumRpc {
   private lastRxHex: string | null = null;
   private ready = false;
   private listeners = new Set<(snapshot: RpcSnapshot) => void>();
+  /** Unsolicited RPC messages (generic). */
+  private eventListeners = new Set<(message: PB.Main) => void>();
+  /** Decoded GUI screen frames. */
+  private frameListeners = new Set<(frame: ScreenFrameEvent) => void>();
 
   constructor(transport: FlipperBleTransport) {
     this.transport = transport;
@@ -1466,6 +1502,117 @@ class MomentumRpc {
     return waiter;
   }
 
+  // — GUI screen stream (Momentum GUI RPC) —
+
+  /** Subscribes to every unsolicited RPC message. */
+  onEvent(listener: (message: PB.Main) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
+  }
+
+  /** Subscribes to decoded `gui_screen_frame` events. */
+  onScreenFrame(listener: (frame: ScreenFrameEvent) => void): () => void {
+    this.frameListeners.add(listener);
+    return () => {
+      this.frameListeners.delete(listener);
+    };
+  }
+
+  /** Tracked request: the firmware answers once, then streams frames. */
+  async startScreenStream(): Promise<RpcSimpleResult> {
+    return this.simpleRequest("Screen stream start", {
+      commandStatus: PB.CommandStatus.OK,
+      hasNext: false,
+      guiStartScreenStreamRequest: {},
+    });
+  }
+
+  /** Tracked request: the firmware answers once the stream is stopped. */
+  async stopScreenStream(): Promise<RpcSimpleResult> {
+    return this.simpleRequest("Screen stream stop", {
+      commandStatus: PB.CommandStatus.OK,
+      hasNext: false,
+      guiStopScreenStreamRequest: {},
+    });
+  }
+
+  /** One GUI input event. Press/release pairing is the caller's job. */
+  async sendInputEvent(
+    key: FlipperInputKey,
+    action: FlipperInputAction,
+  ): Promise<RpcSimpleResult> {
+    return this.simpleRequest(`Input ${key} ${action}`, {
+      commandStatus: PB.CommandStatus.OK,
+      hasNext: false,
+      guiSendInputEventRequest: { key: INPUT_KEYS[key], type: INPUT_TYPES[action] },
+    });
+  }
+
+  /** Mock-mode equivalents. Nothing is transmitted and nothing is decoded. */
+  mockSimpleResult(label: string): RpcSimpleResult {
+    this.transport.logEvent("info", `Mock ${label} — simulated, no Flipper involved`);
+    return {
+      ok: true,
+      mock: true,
+      commandId: null,
+      roundTripMs: 4,
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+  }
+
+  /** Shared single-response request helper used by the GUI operations. */
+  private async simpleRequest(
+    label: string,
+    main: PB.Main.$Shape,
+  ): Promise<RpcSimpleResult> {
+    const at = Date.now();
+    if (!this.transport.canTransfer() || !this.ready) {
+      return {
+        ok: false,
+        mock: false,
+        commandId: null,
+        roundTripMs: null,
+        status: null,
+        error: "Not connected to a Flipper.",
+        at,
+      };
+    }
+    const started = performance.now();
+    try {
+      const parts = await this.sendRequest(main);
+      const response = parts[0] as PB.Main | undefined;
+      const statusValue = Number(response?.commandStatus ?? 0);
+      const status = statusName(statusValue);
+      const ok = statusValue === PB.CommandStatus.OK;
+      if (!ok) this.transport.logEvent("warn", `${label} failed: ${status}`);
+      return {
+        ok,
+        mock: false,
+        commandId: Number(response?.commandId ?? 0) || null,
+        roundTripMs: Math.round(performance.now() - started),
+        status,
+        error: ok ? null : `The Flipper reported ${status}.`,
+        at,
+      };
+    } catch (error) {
+      const message = describe(error);
+      this.transport.logEvent("error", `${label} failed: ${message}`);
+      return {
+        ok: false,
+        mock: false,
+        commandId: null,
+        roundTripMs: null,
+        status: null,
+        error: message,
+        at,
+      };
+    }
+  }
+
   // — internals —
 
   /** Splits a frame into characteristic-sized chunks (243 bytes max). */
@@ -1499,18 +1646,64 @@ class MomentumRpc {
       const total = header.bytesRead + header.value;
       if (this.buffer.length < total) return; // message body still incomplete
       const body = this.buffer.subarray(header.bytesRead, total);
-      this.lastRxHex = toHex(this.buffer.subarray(0, total));
-      this.buffer = this.buffer.slice(total);
       let message: PB.Main;
       try {
         message = PB.Main.decode(body);
       } catch (error) {
+        this.buffer = this.buffer.slice(total);
         this.transport.logEvent("error", `RPC decode error: ${describe(error)}`);
         continue;
       }
+
+      // Unsolicited stream events (GUI screen frames) are routed by content
+      // type, never by command ID. They skip the pending collector, the hex
+      // conversion and the per-frame log line — this path must stay cheap and
+      // must never log frame contents.
+      if (this.dispatchEvent(message)) {
+        this.buffer = this.buffer.slice(total);
+        continue;
+      }
+
+      this.lastRxHex = toHex(this.buffer.subarray(0, total));
+      this.buffer = this.buffer.slice(total);
       this.transport.logEvent("info", "RPC response received");
       this.deliver(message, this.lastRxHex ?? "");
     }
+  }
+
+  /**
+   * Generic unsolicited-event dispatch. Returns true when the message was an
+   * event and must not be treated as a command response. Kept generic so other
+   * asynchronous RPC messages can be added later without touching framing.
+   */
+  private dispatchEvent(message: PB.Main): boolean {
+    if (message.content !== "guiScreenFrame") return false;
+    for (const listener of this.eventListeners) {
+      try {
+        listener(message);
+      } catch (error) {
+        console.error("RPC event listener failed", error);
+      }
+    }
+    const frame = message.guiScreenFrame;
+    if (frame && this.frameListeners.size > 0) {
+      const data = frame.data instanceof Uint8Array ? frame.data : new Uint8Array(0);
+      const event: ScreenFrameEvent = {
+        data,
+        orientation: ORIENTATIONS[Number(frame.orientation ?? 0)] ?? "horizontal",
+        bgColor: Number(frame.bgColor ?? 0),
+        fgColor: Number(frame.fgColor ?? 0),
+        at: Date.now(),
+      };
+      for (const listener of this.frameListeners) {
+        try {
+          listener(event);
+        } catch (error) {
+          console.error("Screen frame listener failed", error);
+        }
+      }
+    }
+    return true;
   }
 
   /** Registers a pending request and returns the promise for its response(s). */
