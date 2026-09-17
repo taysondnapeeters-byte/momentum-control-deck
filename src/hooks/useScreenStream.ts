@@ -208,13 +208,43 @@ export function useScreenStream() {
         setInputError("Not connected — the input was not sent.");
         return;
       }
+      // A repeat is idempotent: if the link is still busy, drop it rather than
+      // queue it, so a hold can never build a backlog in front of a later tap.
+      if (action === "repeat" && inFlightRef.current) return;
+
       const send = async () => {
-        const result = await rpc.sendInputEvent(key, action);
-        setInputError(result.ok ? null : (result.error ?? `Input ${key} ${action} failed.`));
+        inFlightRef.current = true;
+        try {
+          const result = await rpc.sendInputEvent(key, action);
+          setInputError(result.ok ? null : (result.error ?? `Input ${key} ${action} failed.`));
+        } catch (error) {
+          setInputError(error instanceof Error ? error.message : `Input ${key} ${action} failed.`);
+        } finally {
+          inFlightRef.current = false;
+        }
       };
-      const queued = sendQueueRef.current.then(send, send);
+
+      // Watchdog: a send that outlives the RPC timeout window must not hold the
+      // chain hostage — the next event starts from a fresh resolved promise.
+      const guarded = () =>
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            inFlightRef.current = false;
+            resolve();
+          }, SEND_WATCHDOG_MS);
+          void send().finally(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+
+      const queued = sendQueueRef.current.then(guarded, guarded);
       sendQueueRef.current = queued.catch(() => {});
       await queued;
+      // Chain emptied: reset to a plain resolved promise so nothing accumulates.
+      if (sendQueueRef.current === queued || !inFlightRef.current) {
+        sendQueueRef.current = Promise.resolve();
+      }
     },
     [connection, mockActive],
   );
