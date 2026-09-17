@@ -273,6 +273,10 @@ class MomentumRpc {
   private lastRxHex: string | null = null;
   private ready = false;
   private listeners = new Set<(snapshot: RpcSnapshot) => void>();
+  /** Unsolicited RPC messages (generic). */
+  private eventListeners = new Set<(message: PB.Main) => void>();
+  /** Decoded GUI screen frames. */
+  private frameListeners = new Set<(frame: ScreenFrameEvent) => void>();
 
   constructor(transport: FlipperBleTransport) {
     this.transport = transport;
