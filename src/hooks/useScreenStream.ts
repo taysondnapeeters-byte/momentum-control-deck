@@ -153,18 +153,25 @@ export function useScreenStream() {
     setStatus("inactive");
   }, [connection, detach, mockActive]);
 
-  /** One press/release pair per control; never a release without a press. */
+  /**
+   * One gesture per control: PRESS on down, then SHORT + RELEASE on up.
+   * Sends are serialized so SHORT reaches the wire before RELEASE.
+   */
+  const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const sendKey = useCallback(
-    async (key: FlipperInputKey, action: "press" | "release") => {
+    async (key: FlipperInputKey, action: "press" | "release" | "short") => {
       if (action === "press") {
         if (heldRef.current.has(key)) return;
         heldRef.current.add(key);
-      } else {
+      } else if (action === "release") {
         if (!heldRef.current.has(key)) return;
         heldRef.current.delete(key);
       }
+      // "short" touches nothing: it is always bracketed by PRESS and RELEASE.
 
       if (mockActive) {
+        // The simulated display already reacted to the press; SHORT is a no-op.
+        if (action === "short") return;
         const state = mockStateRef.current;
         state.pressed = action === "press" ? key : null;
         if (action === "press") {
@@ -180,8 +187,13 @@ export function useScreenStream() {
         setInputError("Not connected — the input was not sent.");
         return;
       }
-      const result = await rpc.sendInputEvent(key, action);
-      setInputError(result.ok ? null : (result.error ?? `Input ${key} ${action} failed.`));
+      const send = async () => {
+        const result = await rpc.sendInputEvent(key, action);
+        setInputError(result.ok ? null : (result.error ?? `Input ${key} ${action} failed.`));
+      };
+      const queued = sendQueueRef.current.then(send, send);
+      sendQueueRef.current = queued.catch(() => {});
+      await queued;
     },
     [connection, mockActive],
   );
