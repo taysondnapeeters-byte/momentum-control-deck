@@ -31,6 +31,8 @@ export interface CharacteristicProps {
 export interface CharacteristicInfo {
   key: CharacteristicKey;
   label: string;
+  /** Symbolic Momentum label (FE61 etc.), distinct from the canonical UUID. */
+  symbolic: string;
   uuid: string;
   found: boolean;
   /** Only present when the characteristic was actually discovered. */
