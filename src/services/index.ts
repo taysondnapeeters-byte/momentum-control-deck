@@ -85,6 +85,20 @@ export interface BleSnapshot {
   raw: BleRawEntry[];
 }
 
+/** Result of one `getDevices()` lookup, with the exact outcome visible. */
+export interface KnownDevicesLookup {
+  /**
+   * unavailable — the browser has no getDevices API.
+   * empty — the API exists and returned zero devices.
+   * found — the API exists and returned one or more devices.
+   * error — the API threw an exception.
+   */
+  status: "unavailable" | "empty" | "found" | "error";
+  devices: { id: string; name: string | null }[];
+  /** Exception name/message when status is "error". */
+  error: string | null;
+}
+
 export interface FlipperBleTransport {
   isSupported(): boolean;
   getSnapshot(): BleSnapshot;
@@ -93,8 +107,8 @@ export interface FlipperBleTransport {
   connect(): Promise<void>;
   /** True only when the browser exposes the previously-permitted device API. */
   supportsReconnect(): boolean;
-  /** Devices the user already permitted. Empty when unsupported. */
-  listKnownDevices(): Promise<{ id: string; name: string | null }[]>;
+  /** Devices the user already permitted, with the exact lookup outcome. */
+  listKnownDevices(): Promise<KnownDevicesLookup>;
   /** Connects to a previously permitted device without the chooser. */
   reconnect(id: string): Promise<void>;
   /** Troubleshooting only: broad chooser, inspect services, disconnect. */
