@@ -133,10 +133,31 @@ export interface RpcPingResult {
   error: string | null;
 }
 
+/** One key/value pair exactly as the Flipper returned it. */
+export interface RpcDeviceInfoEntry {
+  key: string;
+  value: string;
+}
+
+/** Outcome of a Device Info round trip. `mock` is never hidden. */
+export interface RpcDeviceInfoResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  roundTripMs: number | null;
+  entries: RpcDeviceInfoEntry[];
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+  at: number;
+}
+
 export interface RpcSnapshot {
   ready: boolean;
   busy: boolean;
   lastPing: RpcPingResult | null;
+  lastDeviceInfo: RpcDeviceInfoResult | null;
 }
 
 export interface FlipperRpc {
@@ -144,6 +165,7 @@ export interface FlipperRpc {
   getSnapshot(): RpcSnapshot;
   subscribe(listener: (snapshot: RpcSnapshot) => void): () => void;
   ping(): Promise<RpcPingResult>;
+  getDeviceInfo(): Promise<RpcDeviceInfoResult>;
 }
 
 export interface FlipperDevice {
