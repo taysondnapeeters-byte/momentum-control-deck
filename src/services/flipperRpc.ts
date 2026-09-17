@@ -14,7 +14,14 @@
  */
 
 import { PB } from "@/proto/flipper_pb.js";
-import type { CharacteristicKey, FlipperBleTransport, RpcPingResult, RpcSnapshot } from "./index";
+import type {
+  CharacteristicKey,
+  FlipperBleTransport,
+  RpcDeviceInfoEntry,
+  RpcDeviceInfoResult,
+  RpcPingResult,
+  RpcSnapshot,
+} from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
 
 /** Momentum caps a single characteristic value chunk at 243 bytes. */
