@@ -91,6 +91,12 @@ export interface FlipperBleTransport {
   subscribe(listener: (snapshot: BleSnapshot) => void): () => void;
   /** Opens the browser chooser, connects, discovers and subscribes. */
   connect(): Promise<void>;
+  /** True only when the browser exposes the previously-permitted device API. */
+  supportsReconnect(): boolean;
+  /** Devices the user already permitted. Empty when unsupported. */
+  listKnownDevices(): Promise<{ id: string; name: string | null }[]>;
+  /** Connects to a previously permitted device without the chooser. */
+  reconnect(id: string): Promise<void>;
   /** Troubleshooting only: broad chooser, inspect services, disconnect. */
   runDiagnostic(): Promise<void>;
   disconnect(): Promise<void>;
