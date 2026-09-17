@@ -169,24 +169,18 @@ class MomentumBleTransport implements FlipperBleTransport {
     this.discovery = null;
     this.setState("requesting");
     this.addLog("info", "Bluetooth chooser opened");
+    this.addLog("info", "Diagnostic experiment: acceptAllDevices + optionalServices[FE60]");
     this.addLog("info", `Momentum Serial Service UUID: ${MOMENTUM_SERIAL_SERVICE}`);
     this.addLog("info", `optionalServices: [${MOMENTUM_SERIAL_SERVICE}]`);
 
     let device: BluetoothDevice;
     try {
       device = await navigator.bluetooth!.requestDevice({
-        // Web Bluetooth OR-filters across filter objects: any advertised
-        // Momentum value OR a "Flipper" name prefix matches.
-        // `services` must be a sequence (array) — a scalar is rejected.
-        filters: [
-          ...MOMENTUM_ADVERTISING_UUIDS.map((uuid) => ({
-            services: [uuid],
-          })),
-          ...UNVERIFIED_ADVERTISING_UUIDS.map((uuid) => ({
-            services: [uuid],
-          })),
-          { namePrefix: "Flipper" },
-        ],
+        // TEMPORARY diagnostic experiment: the selection filter is removed
+        // entirely so we can determine whether Chrome exposes FE60 when the
+        // device is chosen with no filter at all. Note: `namePrefix` cannot
+        // be combined with `acceptAllDevices` — the API forbids mixing them.
+        acceptAllDevices: true,
         optionalServices: [MOMENTUM_SERIAL_SERVICE],
       });
     } catch (error) {
