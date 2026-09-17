@@ -512,6 +512,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       selectedFile,
       reconnectSupported,
       knownDevices,
+      knownDevicesLookup,
     ],
   );
 
