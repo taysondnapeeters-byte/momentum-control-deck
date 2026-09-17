@@ -47,11 +47,19 @@ function statusName(status: number | null | undefined): string {
   return name ?? `UNKNOWN (${status})`;
 }
 
+/**
+ * A request may be answered by a stream of `PB.Main` messages that share the
+ * command ID; every message except the last carries `has_next = true`.
+ */
 interface Pending {
   commandId: number;
   sentAt: number;
   timer: ReturnType<typeof setTimeout>;
-  resolve: (main: PB.Main) => void;
+  timeoutMs: number;
+  timeoutMessage: string;
+  parts: PB.Main[];
+  rxHex: string[];
+  resolve: (parts: PB.Main[]) => void;
   reject: (error: Error) => void;
 }
 
