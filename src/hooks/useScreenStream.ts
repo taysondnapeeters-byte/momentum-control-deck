@@ -157,29 +157,38 @@ export function useScreenStream() {
   /**
    * One gesture per control. A quick tap sends exactly one SHORT event (the
    * qFlipper approach — menus listen for SHORT, and RPC input bypasses the
-   * hardware timer that would normally synthesize it). A hold sends PRESS when
-   * the threshold is crossed and RELEASE on pointer up. Sends are serialized
-   * so events never arrive out of order.
+   * hardware timer that would normally synthesize it). A hold sends LONG when
+   * the threshold is crossed, REPEAT on a cadence while held, and RELEASE on
+   * pointer up. Sends are serialized so events never arrive out of order.
    */
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const sendKey = useCallback(
     async (key: FlipperInputKey, gesture: PadGesture) => {
       const action: FlipperInputAction =
-        gesture === "tap" ? "short" : gesture === "holdStart" ? "press" : "release";
+        gesture === "tap"
+          ? "short"
+          : gesture === "holdStart"
+            ? "long"
+            : gesture === "holdRepeat"
+              ? "repeat"
+              : "release";
 
-      if (action === "press") {
+      if (action === "long") {
         if (heldRef.current.has(key)) return;
         heldRef.current.add(key);
+      } else if (action === "repeat") {
+        // Drop a stray interval tick that lands after the release.
+        if (!heldRef.current.has(key)) return;
       } else if (action === "release") {
         if (!heldRef.current.has(key)) return;
         heldRef.current.delete(key);
       }
-      // "short" touches nothing: a tap is never bracketed by PRESS/RELEASE.
+      // "short" touches nothing: a tap is never bracketed by a hold.
 
       if (mockActive) {
         const state = mockStateRef.current;
-        state.pressed = action === "press" ? key : null;
-        // The simulated display reacts to taps (SHORT) and hold starts.
+        state.pressed = action === "release" ? null : key;
+        // The simulated display reacts to taps, hold starts and repeats.
         if (action !== "release") {
           if (key === "down") state.selection = (state.selection + 1) % MOCK_MENU_ROWS;
           if (key === "up") state.selection = (state.selection + MOCK_MENU_ROWS - 1) % MOCK_MENU_ROWS;
