@@ -169,6 +169,8 @@ class MomentumBleTransport implements FlipperBleTransport {
     this.discovery = null;
     this.setState("requesting");
     this.addLog("info", "Bluetooth chooser opened");
+    this.addLog("info", `Momentum Serial Service UUID: ${MOMENTUM_SERIAL_SERVICE}`);
+    this.addLog("info", `optionalServices: [${MOMENTUM_SERIAL_SERVICE}]`);
 
     let device: BluetoothDevice;
     try {
