@@ -705,6 +705,26 @@ class MomentumRpc {
     return result;
   }
 
+  private finishPowerInfo(
+    partial: Partial<RpcPowerInfoResult> & { ok: boolean },
+  ): RpcPowerInfoResult {
+    const result: RpcPowerInfoResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      roundTripMs: partial.roundTripMs ?? null,
+      entries: partial.entries ?? [],
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastPowerInfo = result;
+    this.emit();
+    return result;
+  }
+
   private finishDeviceInfo(
     partial: Partial<RpcDeviceInfoResult> & { ok: boolean },
   ): RpcDeviceInfoResult {
