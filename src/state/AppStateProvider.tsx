@@ -12,19 +12,30 @@ import { idbClear, idbGet, idbSet, KEY_DECK, KEY_SETTINGS } from "@/lib/idb";
 import { MOCK_DECK } from "@/data/mockDeck";
 import type { DeckButton, DeckConfig } from "@/types/deck";
 import { DEFAULT_SETTINGS, type AppSettings, type ThemeMode } from "@/types/settings";
-import type { ConnectionStatus } from "@/services";
+import type { BleSnapshot } from "@/services";
+import { getFlipperBleTransport } from "@/services/flipperBleTransport";
+
+const transport = getFlipperBleTransport();
 
 interface AppStateValue {
   ready: boolean;
   deck: DeckConfig;
   settings: AppSettings;
-  connection: ConnectionStatus;
+  /** Live BLE transport snapshot. The UI never touches navigator.bluetooth. */
+  ble: BleSnapshot;
+  /** Convenience alias used across the app. */
+  connection: BleSnapshot["state"];
+  bluetoothSupported: boolean;
+  connectFlipper: () => Promise<void>;
+  disconnectFlipper: () => Promise<void>;
+  clearBleLogs: () => void;
   saveDeck: (next: DeckConfig) => Promise<void>;
   upsertButton: (button: DeckButton) => Promise<void>;
   removeButton: (id: string) => Promise<void>;
   moveButton: (id: string, direction: -1 | 1) => Promise<void>;
   setTheme: (theme: ThemeMode) => Promise<void>;
   setGeminiApiKey: (key: string | null) => Promise<void>;
+  setMockMode: (enabled: boolean) => Promise<void>;
   clearAllData: () => Promise<void>;
 }
 
@@ -34,8 +45,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [deck, setDeck] = useState<DeckConfig>(MOCK_DECK);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  // Hardware is not implemented in this phase; the status stays disconnected.
-  const [connection] = useState<ConnectionStatus>("disconnected");
+  const [ble, setBle] = useState<BleSnapshot>(() => transport.getSnapshot());
+  const [bluetoothSupported, setBluetoothSupported] = useState(false);
+
+  useEffect(() => {
+    setBluetoothSupported(transport.isSupported());
+    setBle(transport.getSnapshot());
+    return transport.subscribe(setBle);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +104,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       ready,
       deck,
       settings,
-      connection,
+      ble,
+      connection: ble.state,
+      bluetoothSupported,
+      connectFlipper: async () => {
+        try {
+          await transport.connect();
+        } catch (error) {
+          console.error("Bluetooth connection failed", error);
+        }
+      },
+      disconnectFlipper: async () => {
+        try {
+          await transport.disconnect();
+        } catch (error) {
+          console.error("Bluetooth disconnect failed", error);
+        }
+      },
+      clearBleLogs: () => transport.clearLogs(),
       saveDeck: persistDeck,
       upsertButton: async (button) => {
         const exists = deck.buttons.some((b) => b.id === button.id);
@@ -112,13 +146,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       },
       setTheme: async (theme) => persistSettings({ ...settings, theme }),
       setGeminiApiKey: async (geminiApiKey) => persistSettings({ ...settings, geminiApiKey }),
+      setMockMode: async (mockMode) => persistSettings({ ...settings, mockMode }),
       clearAllData: async () => {
         await idbClear();
         setDeck(MOCK_DECK);
         setSettings(DEFAULT_SETTINGS);
       },
     }),
-    [ready, deck, settings, connection, persistDeck, persistSettings],
+    [ready, deck, settings, ble, bluetoothSupported, persistDeck, persistSettings],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
