@@ -104,7 +104,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const target = index + direction;
         if (index < 0 || target < 0 || target >= deck.buttons.length) return;
         const buttons = [...deck.buttons];
-        [buttons[index], buttons[target]] = [buttons[target], buttons[index]];
+        const moved = buttons[index] as DeckButton;
+        const swapped = buttons[target] as DeckButton;
+        buttons[index] = swapped;
+        buttons[target] = moved;
         await persistDeck({ ...deck, buttons });
       },
       setTheme: async (theme) => persistSettings({ ...settings, theme }),
