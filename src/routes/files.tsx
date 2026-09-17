@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ChevronLeft,
   ChevronRight,
   File as FileIcon,
+  FilePlus2,
   Folder,
   Loader2,
   RefreshCw,
@@ -10,6 +12,8 @@ import {
 
 import { Panel, PageShell, StatusPill } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { FileViewerPanel } from "@/components/FileViewerPanel";
 import { useAppState } from "@/state/AppStateProvider";
 
@@ -48,6 +52,10 @@ function FilesPage() {
     storageList,
     storageLoading,
     storageReadLoading,
+    storageWriteLoading,
+    createFileReport,
+    createStorageFile,
+    clearCreateFileReport,
     selectedFile,
     refreshStorageList,
     navigateIntoStorageDirectory,
@@ -56,11 +64,19 @@ function FilesPage() {
     closeStorageFile,
   } = useAppState();
 
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("momentum-deck-test.txt");
+  const [newContent, setNewContent] = useState("Momentum Deck write test 1\n");
+  const [confirming, setConfirming] = useState(false);
+
   const connected = ble.state === "connected";
   const mock = settings.mockMode && !connected;
   const canBrowse = mock || rpc.ready;
-  const busy = storageLoading || storageReadLoading;
+  const busy = storageLoading || storageReadLoading || storageWriteLoading;
   const listing = storageList && storageList.path === storagePath ? storageList : null;
+
+  const newBytes = new TextEncoder().encode(newContent);
+  const targetPath = `${storagePath.replace(/\/$/, "")}/${newName.trim()}`;
 
   return (
     <PageShell title="Files" subtitle="Read-only storage browser.">
