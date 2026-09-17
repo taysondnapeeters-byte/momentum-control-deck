@@ -1586,7 +1586,7 @@ class MomentumRpc {
       const parts = await this.sendRequest(main);
       const response = parts[0] as PB.Main | undefined;
       const statusValue = Number(response?.commandStatus ?? 0);
-      const status = guiStatusName(statusValue);
+      const status = statusName(statusValue);
       const ok = statusValue === PB.CommandStatus.OK;
       if (!ok) this.transport.logEvent("warn", `${label} failed: ${status}`);
       return {
