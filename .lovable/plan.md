@@ -54,9 +54,10 @@ notification subscription on characteristics that advertise notify/indicate.
 
 - `src/services/flipperBleTransport.ts`: add `MOMENTUM_ADVERTISING_UUIDS` (verified
   0x3080–0x3083) and `UNVERIFIED_ADVERTISING_UUIDS` (0x3084–0x308F, labelled forward-compatible
-  candidates); `connect()` uses
-  `filters: [...all advertising services, { namePrefix: "Flipper" }]` with
-  `optionalServices: [MOMENTUM_SERIAL_SERVICE]`; per-characteristic log lines; FE60 failure
+  candidates); `connect()` uses `filters: [...all advertising services,
+  { namePrefix: "Flipper" }]` (OR across filters) with
+  `optionalServices: [MOMENTUM_SERIAL_SERVICE]`; the post-connect FE60 check remains the
+  authoritative compatibility test; per-characteristic log lines; FE60 failure
   surfaces `describeError(error)`; final "Connection ready" entry.
 - `src/routes/device.tsx`: short note under the Connect button explaining the advertising vs
   GATT distinction and the no-wildcard limitation.
