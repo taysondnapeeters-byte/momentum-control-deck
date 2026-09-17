@@ -180,6 +180,147 @@ function FilesPage() {
         )}
       </Panel>
 
+      <Panel className="mt-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Create file</h3>
+          {!creating ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-10 rounded-xl px-3 text-xs"
+              disabled={!canBrowse || busy}
+              onClick={() => {
+                clearCreateFileReport();
+                setCreating(true);
+              }}
+            >
+              <FilePlus2 className="mr-1 h-4 w-4" aria-hidden="true" />
+              New file
+            </Button>
+          ) : null}
+        </div>
+
+        {!canBrowse ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Connect a Flipper to create a file.
+          </p>
+        ) : creating ? (
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground" htmlFor="new-file-name">
+                File name
+              </label>
+              <Input
+                id="new-file-name"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                className="h-11 rounded-xl font-mono text-sm"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground" htmlFor="new-file-body">
+                Contents
+              </label>
+              <Textarea
+                id="new-file-body"
+                value={newContent}
+                onChange={(event) => setNewContent(event.target.value)}
+                rows={4}
+                className="rounded-xl font-mono text-sm"
+              />
+            </div>
+            <p className="break-all font-mono text-[11px] text-muted-foreground">
+              {targetPath} · {newBytes.length} bytes
+            </p>
+
+            {confirming ? (
+              <div className="rounded-xl border border-border bg-surface-2 p-3">
+                <p className="text-sm font-medium">Create new file on Flipper</p>
+                <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                  {targetPath}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {newBytes.length} bytes. Existing files are never replaced — if this name is
+                  already taken, nothing is sent.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    className="h-10 rounded-xl px-3 text-xs"
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirming(false);
+                      void createStorageFile(newName.trim(), newBytes).then(() => {
+                        setCreating(false);
+                      });
+                    }}
+                  >
+                    {storageWriteLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      "Create new file on Flipper"
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-10 rounded-xl px-3 text-xs"
+                    onClick={() => setConfirming(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="h-10 rounded-xl px-3 text-xs"
+                  disabled={busy || !newName.trim() || newBytes.length === 0}
+                  onClick={() => setConfirming(true)}
+                >
+                  Create file
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-10 rounded-xl px-3 text-xs"
+                  disabled={busy}
+                  onClick={() => setCreating(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {createFileReport ? (
+          <div className="mt-3 rounded-xl border border-border p-3">
+            <p className="break-all font-mono text-[11px] text-muted-foreground">
+              {createFileReport.path}
+            </p>
+            <p
+              className={`mt-1 break-words text-sm ${
+                createFileReport.ok ? "text-signal" : "text-destructive"
+              }`}
+            >
+              {createFileReport.message}
+            </p>
+            {createFileReport.write ? (
+              <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                {createFileReport.write.mock ? "MOCK · " : ""}
+                command {createFileReport.write.commandId} ·{" "}
+                {createFileReport.write.chunks} chunk(s) · status{" "}
+                {createFileReport.write.status ?? "—"}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </Panel>
+
+
       {selectedFile ? (
         <Panel className="mt-4">
           <div className="flex items-center justify-between gap-2">
