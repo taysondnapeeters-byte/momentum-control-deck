@@ -222,71 +222,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           };
         }
       },
-      refreshStorageList: async (path) => {
-        // Mock mode never touches the radio and is always labelled as mock.
-        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageList(path);
+      refreshStorageStat: statAt,
+      readStorageFile: readAt,
+      storagePath,
+      storageLoading,
+      storageReadLoading,
+      storageList,
+      selectedFile,
+      refreshStorageList: loadPath,
+      navigateIntoStorageDirectory: navigateInto,
+      navigateBackStorageDirectory: navigateBack,
+      openStorageFile: openFile,
+      closeStorageFile: () => setSelectedFile(null),
+      reconnectSupported,
+      knownDevices,
+      reconnectFlipper: async (id) => {
         try {
-          return await rpc.listStorage(path);
+          await transport.reconnect(id);
         } catch (error) {
-          console.error("Storage List failed", error);
-          return rpc.getSnapshot().lastStorageList ?? {
-            ok: false,
-            mock: false,
-            commandId: null,
-            path,
-            roundTripMs: null,
-            entries: [],
-            txHex: null,
-            rxHex: null,
-            status: null,
-            error: error instanceof Error ? error.message : "Unknown RPC error.",
-            at: Date.now(),
-          };
-        }
-      },
-      refreshStorageStat: async (path) => {
-        // Mock mode never touches the radio and is always labelled as mock.
-        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageStat(path);
-        try {
-          return await rpc.statStorage(path);
-        } catch (error) {
-          console.error("Storage Stat failed", error);
-          return rpc.getSnapshot().lastStorageStat ?? {
-            ok: false,
-            mock: false,
-            commandId: null,
-            path,
-            entry: null,
-            roundTripMs: null,
-            txHex: null,
-            rxHex: null,
-            status: null,
-            error: error instanceof Error ? error.message : "Unknown RPC error.",
-            at: Date.now(),
-          };
-        }
-      },
-      readStorageFile: async (path) => {
-        // Mock mode never touches the radio and is always labelled as mock.
-        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageRead(path);
-        try {
-          return await rpc.readStorage(path);
-        } catch (error) {
-          console.error("Storage Read failed", error);
-          return rpc.getSnapshot().lastStorageRead ?? {
-            ok: false,
-            mock: false,
-            commandId: null,
-            path,
-            size: 0,
-            data: new Uint8Array(0),
-            roundTripMs: null,
-            txHex: null,
-            rxHex: null,
-            status: null,
-            error: error instanceof Error ? error.message : "Unknown RPC error.",
-            at: Date.now(),
-          };
+          console.error("Bluetooth reconnect failed", error);
         }
       },
       connectFlipper: async () => {
