@@ -340,7 +340,8 @@ class MomentumRpc {
       roundTripMs: partial.roundTripMs ?? null,
       payload: partial.payload ?? null,
       txHex: partial.txHex ?? null,
-      rxHex: partial.rxHex ?? null,
+      rxHex:
+        partial.rxHex ?? (partial.roundTripMs !== undefined ? this.lastRxHex : null),
       status: partial.status ?? null,
       error: partial.error ?? null,
     };
