@@ -68,6 +68,24 @@ const MOCK_TREE: Record<string, StorageListEntry[]> = {
   "/ext/nfc": [{ type: "file", name: "demo.nfc", size: 192, md5sum: null }],
   "/ext/badusb": [],
 };
+
+/** Mock-mode only: metadata for a simulated file, derived from the mock tree. */
+function mockEntryFor(path: string): StorageListEntry {
+  const name = path.split("/").pop() ?? path;
+  const parent = path.slice(0, path.lastIndexOf("/")) || "/ext";
+  const known = (MOCK_TREE[parent] ?? []).find((entry) => entry.name === name);
+  if (known) return { ...known };
+  return { type: "file", name, size: 0, md5sum: null };
+}
+
+/** Mock-mode only: simulated bytes. Text for the demo file, bytes otherwise. */
+function mockBytesFor(path: string): Uint8Array {
+  if (path.endsWith(MOCK_FILE_NAME)) return MOCK_FILE_BYTES;
+  const entry = mockEntryFor(path);
+  const bytes = new Uint8Array(entry.size);
+  for (let i = 0; i < bytes.length; i += 1) bytes[i] = (i * 7 + 11) & 0xff;
+  return bytes;
+}
 const PING_PAYLOAD = "Momentum Deck Ping";
 
 function toHex(bytes: Uint8Array): string {
@@ -830,8 +848,8 @@ class MomentumRpc {
       mock: true,
       commandId: ++this.commandId,
       path,
-      size: MOCK_FILE_BYTES.length,
-      data: MOCK_FILE_BYTES,
+      size: mockBytesFor(path).length,
+      data: mockBytesFor(path),
       roundTripMs: 31,
       txHex: "(mock — nothing was transmitted)",
       rxHex: "(mock — nothing was received)",
