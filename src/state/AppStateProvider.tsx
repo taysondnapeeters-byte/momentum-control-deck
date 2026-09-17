@@ -146,6 +146,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           };
         }
       },
+      refreshDeviceInfo: async () => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockDeviceInfo();
+        try {
+          return await rpc.getDeviceInfo();
+        } catch (error) {
+          console.error("Device Info failed", error);
+          return rpc.getSnapshot().lastDeviceInfo ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            roundTripMs: null,
+            entries: [],
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+            at: Date.now(),
+          };
+        }
+      },
       connectFlipper: async () => {
         try {
           await transport.connect();
