@@ -4,6 +4,9 @@ import { File as FileIcon, Folder, HardDrive, Loader2 } from "lucide-react";
 import { Panel } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 import { InfoRow } from "@/components/DeviceDiagnostics";
+import { FileViewerPanel } from "@/components/FileViewerPanel";
+import { MAX_READ_BYTES } from "@/services/flipperRpc";
+import type { StorageReadResult, StorageStatResult } from "@/services";
 import { useAppState } from "@/state/AppStateProvider";
 
 /** The first path this phase browses. Navigation is intentionally not enabled. */
@@ -16,17 +19,46 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * Read-only Storage List. One request per button press — no polling, and no
- * read, write, delete, rename or execute actions of any kind.
+ * Read-only Storage List plus a read-only single-file viewer. No write,
+ * delete, rename or execute actions of any kind.
  */
 export function StorageListPanel() {
-  const { rpc, refreshStorageList, settings, ble } = useAppState();
+  const { rpc, refreshStorageList, refreshStorageStat, readStorageFile, settings, ble } =
+    useAppState();
   const [loading, setLoading] = useState(false);
+  const [readingPath, setReadingPath] = useState<string | null>(null);
+  const [stat, setStat] = useState<StorageStatResult | null>(null);
+  const [read, setRead] = useState<StorageReadResult | null>(null);
+  const [tooLarge, setTooLarge] = useState<string | null>(null);
 
   const connected = ble.state === "connected";
   const mock = settings.mockMode && !connected;
   const result = rpc.lastStorageList;
   const canRequest = mock || rpc.ready;
+
+  /** Stat first, then read — and only when the file fits the safety limit. */
+  async function openFile(name: string) {
+    const base = result?.path ?? DEFAULT_PATH;
+    const path = `${base.replace(/\/$/, "")}/${name}`;
+    setReadingPath(path);
+    setStat(null);
+    setRead(null);
+    setTooLarge(null);
+    try {
+      const statResult = await refreshStorageStat(path);
+      setStat(statResult);
+      if (!statResult.ok || !statResult.entry) return;
+      if (statResult.entry.size > MAX_READ_BYTES) {
+        setTooLarge(
+          `This file is ${statResult.entry.size} bytes, which is larger than the ${MAX_READ_BYTES} byte limit of the current read mode. It was not read.`,
+        );
+        return;
+      }
+      setRead(await readStorageFile(path));
+    } finally {
+      setReadingPath(null);
+    }
+  }
 
   return (
     <Panel className="mt-4">
@@ -101,6 +133,21 @@ export function StorageListPanel() {
                     <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
                       {entry.type === "dir" ? "folder" : formatSize(entry.size)}
                     </span>
+                    {entry.type === "file" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 shrink-0 rounded-lg px-3 text-xs"
+                        disabled={readingPath !== null}
+                        onClick={() => void openFile(entry.name)}
+                      >
+                        {readingPath?.endsWith(`/${entry.name}`) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          "Read"
+                        )}
+                      </Button>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -133,6 +180,13 @@ export function StorageListPanel() {
           ) : null}
         </div>
       ) : null}
+
+      <FileViewerPanel
+        stat={stat}
+        read={read}
+        loading={readingPath !== null}
+        tooLarge={tooLarge}
+      />
     </Panel>
   );
 }

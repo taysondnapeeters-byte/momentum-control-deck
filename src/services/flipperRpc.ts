@@ -25,6 +25,8 @@ import type {
   RpcSnapshot,
   StorageListEntry,
   StorageListResult,
+  StorageReadResult,
+  StorageStatResult,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
 
@@ -34,6 +36,19 @@ const MAX_CHUNK = 243;
 export const MAX_SERIAL_DATA = 486;
 
 const REQUEST_TIMEOUT_MS = 5000;
+/** A multi-chunk file read needs more head-room than a single-shot request. */
+const READ_TIMEOUT_MS = 30000;
+/**
+ * Conservative browser-memory safety limit for Storage Read. Files larger than
+ * this are never fetched; nothing is ever truncated silently. Easy to raise.
+ */
+export const MAX_READ_BYTES = 64 * 1024;
+
+/** Mock-mode only. Clearly simulated content — never device data. */
+const MOCK_FILE_NAME = "momentum-demo.txt";
+const MOCK_FILE_BYTES = new TextEncoder().encode(
+  "Mock file — simulated contents.\nNo Flipper was contacted and nothing was transmitted.\n",
+);
 const PING_PAYLOAD = "Momentum Deck Ping";
 
 function toHex(bytes: Uint8Array): string {
@@ -114,6 +129,8 @@ class MomentumRpc {
   private lastDeviceInfo: RpcDeviceInfoResult | null = null;
   private lastPowerInfo: RpcPowerInfoResult | null = null;
   private lastStorageList: StorageListResult | null = null;
+  private lastStorageStat: StorageStatResult | null = null;
+  private lastStorageRead: StorageReadResult | null = null;
   /** Raw RX hex of the frames that completed a request, by command ID. */
   private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
@@ -150,6 +167,8 @@ class MomentumRpc {
       lastDeviceInfo: this.lastDeviceInfo,
       lastPowerInfo: this.lastPowerInfo,
       lastStorageList: this.lastStorageList,
+      lastStorageStat: this.lastStorageStat,
+      lastStorageRead: this.lastStorageRead,
     };
   }
 
@@ -605,6 +624,7 @@ class MomentumRpc {
         { type: "dir", name: "subghz", size: 0, md5sum: null },
         { type: "dir", name: "nfc", size: 0, md5sum: null },
         { type: "dir", name: "badusb", size: 0, md5sum: null },
+        { type: "file", name: MOCK_FILE_NAME, size: MOCK_FILE_BYTES.length, md5sum: null },
       ],
       txHex: "(mock — nothing was transmitted)",
       rxHex: "(mock — nothing was received)",
@@ -766,6 +786,345 @@ class MomentumRpc {
       roundTripMs,
       status,
       entries,
+    });
+  }
+
+  /** Simulated file metadata. Always labelled as mock; never real data. */
+  mockStorageStat(path: string): StorageStatResult {
+    const result: StorageStatResult = {
+      ok: true,
+      mock: true,
+      commandId: ++this.commandId,
+      path,
+      entry: { type: "file", name: MOCK_FILE_NAME, size: MOCK_FILE_BYTES.length, md5sum: null },
+      roundTripMs: 14,
+      txHex: "(mock — nothing was transmitted)",
+      rxHex: "(mock — nothing was received)",
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+    this.lastStorageStat = result;
+    this.transport.logEvent("info", "Mock Storage Stat — simulated, no Flipper involved");
+    this.emit();
+    return result;
+  }
+
+  /** Simulated file contents. Always labelled as mock; never real data. */
+  mockStorageRead(path: string): StorageReadResult {
+    const result: StorageReadResult = {
+      ok: true,
+      mock: true,
+      commandId: ++this.commandId,
+      path,
+      size: MOCK_FILE_BYTES.length,
+      data: MOCK_FILE_BYTES,
+      roundTripMs: 31,
+      txHex: "(mock — nothing was transmitted)",
+      rxHex: "(mock — nothing was received)",
+      status: "OK",
+      error: null,
+      at: Date.now(),
+    };
+    this.lastStorageRead = result;
+    this.transport.logEvent("info", "Mock Storage Read — simulated, no Flipper involved");
+    this.emit();
+    return result;
+  }
+
+  /**
+   * Read-only Storage Stat. A single `storage_stat_response` carries one
+   * `File` with the entry's type, name and size.
+   */
+  async statStorage(path: string): Promise<StorageStatResult> {
+    const log = this.transport.logEvent.bind(this.transport);
+
+    if (!this.transport.canTransfer() || !this.ready) {
+      const message =
+        this.transport.getSnapshot().state === "connected"
+          ? "RPC is not ready — the TX/RX characteristics are not usable."
+          : "Not connected to a Flipper.";
+      log("error", `Storage Stat failed: ${message}`);
+      return this.finishStorageStat({ ok: false, path, error: message });
+    }
+
+    const invalid = validateStoragePath(path);
+    if (invalid) {
+      log("error", `Storage Stat failed: ${invalid}`);
+      return this.finishStorageStat({ ok: false, path, error: invalid });
+    }
+
+    const commandId = ++this.commandId;
+    log("info", "Storage Stat request created");
+    log("info", `Storage Stat path: ${path}`);
+    log("info", `Storage Stat command ID: ${commandId}`);
+
+    let frame: Uint8Array;
+    try {
+      frame = PB.Main.encodeDelimited({
+        commandId,
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        storageStatRequest: { path },
+      }).finish();
+    } catch (error) {
+      const message = `Protobuf encode failed: ${describe(error)}`;
+      log("error", `Storage Stat failed: ${message}`);
+      return this.finishStorageStat({ ok: false, commandId, path, error: message });
+    }
+
+    const txHex = toHex(frame);
+    log("info", `Storage Stat TX bytes: ${txHex}`);
+
+    const started = performance.now();
+    const waiter = this.track(commandId, started, REQUEST_TIMEOUT_MS, "Storage Stat timeout");
+
+    try {
+      await this.writeFramed(frame);
+    } catch (error) {
+      this.clearPending(commandId);
+      const message = describe(error);
+      log("error", `Storage Stat failed: ${message}`);
+      return this.finishStorageStat({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    let parts: PB.Main[];
+    try {
+      parts = await waiter;
+    } catch (error) {
+      const message = describe(error);
+      log("error", `Storage Stat failed: ${message}`);
+      return this.finishStorageStat({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    const roundTripMs = Math.round(performance.now() - started);
+    const rxHex = this.completedRxHex.get(commandId) ?? null;
+    this.completedRxHex.delete(commandId);
+    log("info", "Storage Stat response received");
+
+    const response = parts[0] as PB.Main;
+    const status = statusName(response.commandStatus);
+    log("info", `Storage Stat response command ID: ${response.commandId}`);
+    log("info", `Storage Stat response status: ${status}`);
+
+    if (Number(response.commandId ?? 0) !== commandId) {
+      const message = "Storage Stat response command ID mismatch";
+      log("error", message);
+      return this.finishStorageStat({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: message,
+      });
+    }
+
+    if ((response.commandStatus ?? 0) !== PB.CommandStatus.OK) {
+      const message = storageStatusMessage(status);
+      log("error", `Storage Stat failed: ${message} (${status})`);
+      return this.finishStorageStat({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: message,
+      });
+    }
+
+    const stat = response.storageStatResponse;
+    if (!stat?.file) {
+      log("error", "Storage Stat unexpected response type");
+      return this.finishStorageStat({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: "The Flipper answered with something other than file information.",
+      });
+    }
+
+    const file = stat.file;
+    log("info", "Storage Stat decoded successfully");
+    return this.finishStorageStat({
+      ok: true,
+      commandId,
+      path,
+      txHex,
+      rxHex,
+      roundTripMs,
+      status,
+      entry: {
+        type: file.type === PB_Storage_DIR ? "dir" : "file",
+        name: file.name ? file.name : path.split("/").pop() ?? path,
+        size: Number(file.size ?? 0),
+        md5sum: file.md5sum ? file.md5sum : null,
+      },
+    });
+  }
+
+  /**
+   * Read-only Storage Read. The Flipper answers with a stream of
+   * `storage_read_response` messages sharing one command ID; each carries a
+   * chunk in `file.data` and the last one has `has_next = false`.
+   */
+  async readStorage(path: string): Promise<StorageReadResult> {
+    const log = this.transport.logEvent.bind(this.transport);
+
+    if (!this.transport.canTransfer() || !this.ready) {
+      const message =
+        this.transport.getSnapshot().state === "connected"
+          ? "RPC is not ready — the TX/RX characteristics are not usable."
+          : "Not connected to a Flipper.";
+      log("error", `Storage Read failed: ${message}`);
+      return this.finishStorageRead({ ok: false, path, error: message });
+    }
+
+    const invalid = validateStoragePath(path);
+    if (invalid) {
+      log("error", `Storage Read failed: ${invalid}`);
+      return this.finishStorageRead({ ok: false, path, error: invalid });
+    }
+
+    const commandId = ++this.commandId;
+    log("info", "Storage Read request created");
+    log("info", `Storage Read path: ${path}`);
+    log("info", `Storage Read command ID: ${commandId}`);
+
+    let frame: Uint8Array;
+    try {
+      frame = PB.Main.encodeDelimited({
+        commandId,
+        commandStatus: PB.CommandStatus.OK,
+        hasNext: false,
+        storageReadRequest: { path },
+      }).finish();
+    } catch (error) {
+      const message = `Protobuf encode failed: ${describe(error)}`;
+      log("error", `Storage Read failed: ${message}`);
+      return this.finishStorageRead({ ok: false, commandId, path, error: message });
+    }
+
+    const txHex = toHex(frame);
+    log("info", `Storage Read TX bytes: ${txHex}`);
+
+    const started = performance.now();
+    const waiter = this.track(commandId, started, READ_TIMEOUT_MS, "Storage Read timeout");
+
+    try {
+      await this.writeFramed(frame);
+    } catch (error) {
+      this.clearPending(commandId);
+      const message = describe(error);
+      log("error", `Storage Read failed: ${message}`);
+      return this.finishStorageRead({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    let parts: PB.Main[];
+    try {
+      parts = await waiter;
+    } catch (error) {
+      const message = describe(error);
+      log("error", `Storage Read failed: ${message}`);
+      return this.finishStorageRead({ ok: false, commandId, path, txHex, error: message });
+    }
+
+    const roundTripMs = Math.round(performance.now() - started);
+    const rxHex = this.completedRxHex.get(commandId) ?? null;
+    this.completedRxHex.delete(commandId);
+    log("info", "Storage Read response received");
+
+    const first = parts[0] as PB.Main;
+    const status = statusName(first.commandStatus);
+    log("info", `Storage Read response command ID: ${first.commandId}`);
+    log("info", `Storage Read response status: ${status}`);
+
+    if (parts.some((part) => Number(part.commandId ?? 0) !== commandId)) {
+      const message = "Storage Read response command ID mismatch";
+      log("error", message);
+      return this.finishStorageRead({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status,
+        error: message,
+      });
+    }
+
+    const failed = parts.find((part) => (part.commandStatus ?? 0) !== PB.CommandStatus.OK);
+    if (failed) {
+      const failedStatus = statusName(failed.commandStatus);
+      const message = storageStatusMessage(failedStatus);
+      log("error", `Storage Read failed: ${message} (${failedStatus})`);
+      return this.finishStorageRead({
+        ok: false,
+        commandId,
+        path,
+        txHex,
+        rxHex,
+        roundTripMs,
+        status: failedStatus,
+        error: message,
+      });
+    }
+
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (const part of parts) {
+      const read = part.storageReadResponse;
+      if (!read) {
+        log("error", "Storage Read unexpected response type");
+        return this.finishStorageRead({
+          ok: false,
+          commandId,
+          path,
+          txHex,
+          rxHex,
+          roundTripMs,
+          status,
+          error: "The Flipper answered with something other than file data.",
+        });
+      }
+      log("info", `Storage Read decoded response part (has_next: ${part.hasNext ? "true" : "false"})`);
+      const data = read.file?.data;
+      if (data && data.length) {
+        const chunk = new Uint8Array(data as ArrayLike<number>);
+        chunks.push(chunk);
+        total += chunk.length;
+      }
+    }
+
+    // An empty file is a valid result, not an error.
+    const combined = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    log("info", "Storage Read decoded successfully");
+    log("info", `Storage Read total bytes: ${combined.length}`);
+    return this.finishStorageRead({
+      ok: true,
+      commandId,
+      path,
+      txHex,
+      rxHex,
+      roundTripMs,
+      status,
+      size: combined.length,
+      data: combined,
     });
   }
 
@@ -959,6 +1318,49 @@ class MomentumRpc {
       at: Date.now(),
     };
     this.lastStorageList = result;
+    this.emit();
+    return result;
+  }
+
+  private finishStorageStat(
+    partial: Partial<StorageStatResult> & { ok: boolean; path: string },
+  ): StorageStatResult {
+    const result: StorageStatResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      entry: partial.entry ?? null,
+      roundTripMs: partial.roundTripMs ?? null,
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastStorageStat = result;
+    this.emit();
+    return result;
+  }
+
+  private finishStorageRead(
+    partial: Partial<StorageReadResult> & { ok: boolean; path: string },
+  ): StorageReadResult {
+    const result: StorageReadResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      size: partial.size ?? 0,
+      data: partial.data ?? new Uint8Array(0),
+      roundTripMs: partial.roundTripMs ?? null,
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      at: Date.now(),
+    };
+    this.lastStorageRead = result;
     this.emit();
     return result;
   }

@@ -201,6 +201,39 @@ export interface StorageListResult {
   at: number;
 }
 
+/** Outcome of a Storage Stat round trip (single response). */
+export interface StorageStatResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  path: string;
+  /** Metadata exactly as the device reported it, or null on failure. */
+  entry: StorageListEntry | null;
+  roundTripMs: number | null;
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+  at: number;
+}
+
+/** Outcome of a Storage Read round trip. Bytes are never decoded here. */
+export interface StorageReadResult {
+  ok: boolean;
+  mock: boolean;
+  commandId: number | null;
+  path: string;
+  /** Number of bytes actually received. */
+  size: number;
+  data: Uint8Array;
+  roundTripMs: number | null;
+  txHex: string | null;
+  rxHex: string | null;
+  status: string | null;
+  error: string | null;
+  at: number;
+}
+
 export interface RpcSnapshot {
   ready: boolean;
   busy: boolean;
@@ -208,6 +241,8 @@ export interface RpcSnapshot {
   lastDeviceInfo: RpcDeviceInfoResult | null;
   lastPowerInfo: RpcPowerInfoResult | null;
   lastStorageList: StorageListResult | null;
+  lastStorageStat: StorageStatResult | null;
+  lastStorageRead: StorageReadResult | null;
 }
 
 export interface FlipperRpc {
@@ -219,6 +254,10 @@ export interface FlipperRpc {
   getPowerInfo(): Promise<RpcPowerInfoResult>;
   /** Read-only directory listing for a Flipper storage path such as `/ext`. */
   listStorage(path: string): Promise<StorageListResult>;
+  /** Read-only metadata for a single file or directory. */
+  statStorage(path: string): Promise<StorageStatResult>;
+  /** Read-only file contents. Bytes are returned untouched. */
+  readStorage(path: string): Promise<StorageReadResult>;
 }
 
 export interface FlipperDevice {
