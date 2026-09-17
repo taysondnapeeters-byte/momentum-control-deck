@@ -52,8 +52,13 @@ declare global {
   }
 
   interface RequestDeviceOptions {
-    filters?: Array<{ services?: string[]; name?: string; namePrefix?: string }>;
-    optionalServices?: string[];
+    /** Per spec, `services` accepts a single UUID or a list. */
+    filters?: Array<{
+      services?: string | string[];
+      name?: string;
+      namePrefix?: string;
+    }>;
+    optionalServices?: (string | number)[];
     acceptAllDevices?: boolean;
   }
 
