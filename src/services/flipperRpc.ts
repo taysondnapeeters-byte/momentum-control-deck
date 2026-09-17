@@ -70,6 +70,7 @@ class MomentumRpc {
   private commandId = 0;
   private busy = false;
   private lastPing: RpcPingResult | null = null;
+  private lastDeviceInfo: RpcDeviceInfoResult | null = null;
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
   private lastRxHex: string | null = null;
   private ready = false;
@@ -97,7 +98,12 @@ class MomentumRpc {
   }
 
   getSnapshot(): RpcSnapshot {
-    return { ready: this.ready, busy: this.busy, lastPing: this.lastPing };
+    return {
+      ready: this.ready,
+      busy: this.busy,
+      lastPing: this.lastPing,
+      lastDeviceInfo: this.lastDeviceInfo,
+    };
   }
 
   subscribe(listener: (snapshot: RpcSnapshot) => void): () => void {
@@ -165,13 +171,7 @@ class MomentumRpc {
     log("info", `RPC TX bytes: ${txHex}`);
 
     const started = performance.now();
-    const waiter = new Promise<PB.Main>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(commandId);
-        reject(new Error("RPC Ping timeout"));
-      }, REQUEST_TIMEOUT_MS);
-      this.pending.set(commandId, { commandId, sentAt: started, timer, resolve, reject });
-    });
+    const waiter = this.track(commandId, started, REQUEST_TIMEOUT_MS, "RPC Ping timeout");
 
     try {
       await this.writeFramed(frame);
@@ -184,7 +184,7 @@ class MomentumRpc {
 
     let response: PB.Main;
     try {
-      response = await waiter;
+      response = (await waiter)[0] as PB.Main;
     } catch (error) {
       const message = describe(error);
       log("error", message === "RPC Ping timeout" ? "RPC Ping timeout" : `RPC Ping failed: ${message}`);
@@ -243,24 +243,12 @@ class MomentumRpc {
    * Generic request path. Kept small and reusable so later phases can send
    * other `PB.Main` messages without touching the framing or pending-map logic.
    */
-  async sendRequest(main: PB.Main.$Shape, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PB.Main> {
+  async sendRequest(main: PB.Main.$Shape, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PB.Main[]> {
     if (!this.transport.canTransfer()) throw new Error("Not connected to a Flipper.");
     const commandId = ++this.commandId;
     const body = { ...main, commandId } as unknown as PB.Main.$Properties;
     const frame = PB.Main.encodeDelimited(body).finish();
-    const waiter = new Promise<PB.Main>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(commandId);
-        reject(new Error("RPC request timeout"));
-      }, timeoutMs);
-      this.pending.set(commandId, {
-        commandId,
-        sentAt: performance.now(),
-        timer,
-        resolve,
-        reject,
-      });
-    });
+    const waiter = this.track(commandId, performance.now(), timeoutMs, "RPC request timeout");
     try {
       await this.writeFramed(frame);
     } catch (error) {
@@ -313,11 +301,37 @@ class MomentumRpc {
         continue;
       }
       this.transport.logEvent("info", "RPC response received");
-      this.deliver(message);
+      this.deliver(message, this.lastRxHex ?? "");
     }
   }
 
-  private deliver(message: PB.Main): void {
+  /** Registers a pending request and returns the promise for its response(s). */
+  private track(
+    commandId: number,
+    sentAt: number,
+    timeoutMs: number,
+    timeoutMessage: string,
+  ): Promise<PB.Main[]> {
+    return new Promise<PB.Main[]>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(commandId);
+        reject(new Error(timeoutMessage));
+      }, timeoutMs);
+      this.pending.set(commandId, {
+        commandId,
+        sentAt,
+        timer,
+        timeoutMs,
+        timeoutMessage,
+        parts: [],
+        rxHex: [],
+        resolve,
+        reject,
+      });
+    });
+  }
+
+  private deliver(message: PB.Main, frameHex: string): void {
     const id = Number(message.commandId ?? 0);
     const pending = this.pending.get(id);
     if (!pending) {
@@ -327,9 +341,21 @@ class MomentumRpc {
       );
       return;
     }
+    pending.parts.push(message);
+    pending.rxHex.push(frameHex);
     clearTimeout(pending.timer);
+
+    if (message.hasNext) {
+      // More parts of the same answer are still on the way.
+      pending.timer = setTimeout(() => {
+        this.pending.delete(id);
+        pending.reject(new Error(pending.timeoutMessage));
+      }, pending.timeoutMs);
+      return;
+    }
+
     this.pending.delete(id);
-    pending.resolve(message);
+    pending.resolve(pending.parts);
   }
 
   private clearPending(commandId: number): void {
