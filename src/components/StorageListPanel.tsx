@@ -133,6 +133,21 @@ export function StorageListPanel() {
                     <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
                       {entry.type === "dir" ? "folder" : formatSize(entry.size)}
                     </span>
+                    {entry.type === "file" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 shrink-0 rounded-lg px-3 text-xs"
+                        disabled={readingPath !== null}
+                        onClick={() => void openFile(entry.name)}
+                      >
+                        {readingPath?.endsWith(`/${entry.name}`) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          "Read"
+                        )}
+                      </Button>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -165,6 +180,13 @@ export function StorageListPanel() {
           ) : null}
         </div>
       ) : null}
+
+      <FileViewerPanel
+        stat={stat}
+        read={read}
+        loading={readingPath !== null}
+        tooLarge={tooLarge}
+      />
     </Panel>
   );
 }
