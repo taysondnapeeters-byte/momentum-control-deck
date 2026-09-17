@@ -25,6 +25,8 @@ import type {
   RpcSnapshot,
   StorageListEntry,
   StorageListResult,
+  StorageReadResult,
+  StorageStatResult,
 } from "./index";
 import { getFlipperBleTransport } from "./flipperBleTransport";
 
@@ -34,6 +36,13 @@ const MAX_CHUNK = 243;
 export const MAX_SERIAL_DATA = 486;
 
 const REQUEST_TIMEOUT_MS = 5000;
+/** A multi-chunk file read needs more head-room than a single-shot request. */
+const READ_TIMEOUT_MS = 30000;
+/**
+ * Conservative browser-memory safety limit for Storage Read. Files larger than
+ * this are never fetched; nothing is ever truncated silently. Easy to raise.
+ */
+export const MAX_READ_BYTES = 64 * 1024;
 const PING_PAYLOAD = "Momentum Deck Ping";
 
 function toHex(bytes: Uint8Array): string {
