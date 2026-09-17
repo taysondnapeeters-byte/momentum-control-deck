@@ -76,6 +76,7 @@ class MomentumRpc {
   private lastPing: RpcPingResult | null = null;
   private lastDeviceInfo: RpcDeviceInfoResult | null = null;
   private lastPowerInfo: RpcPowerInfoResult | null = null;
+  private lastStorageList: StorageListResult | null = null;
   /** Raw RX hex of the frames that completed a request, by command ID. */
   private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
