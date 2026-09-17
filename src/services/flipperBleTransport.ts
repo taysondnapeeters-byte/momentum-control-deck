@@ -15,6 +15,7 @@ import type {
   CharacteristicInfo,
   CharacteristicKey,
   ConnectionState,
+  DiagnosticReport,
   DiscoveryReport,
   FlipperBleTransport,
 } from "./index";
