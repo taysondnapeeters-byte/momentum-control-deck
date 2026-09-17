@@ -66,6 +66,17 @@ function toHex(view: DataView): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join(" ");
 }
 
+/** Exact runtime shape of a caught error, for diagnostics. */
+function describeOriginalError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const ctor = error.constructor?.name ?? "unknown";
+    const name = "name" in error ? String((error as { name: unknown }).name) : "(none)";
+    const message = "message" in error ? String((error as { message: unknown }).message) : "(none)";
+    return `constructor=${ctor}, name=${name}, message=${message}`;
+  }
+  return `non-object error: ${String(error)}`;
+}
+
 function describeError(error: unknown): string {
   if (error instanceof DOMException) {
     switch (error.name) {
@@ -158,6 +169,8 @@ class MomentumBleTransport implements FlipperBleTransport {
     this.discovery = null;
     this.setState("requesting");
     this.addLog("info", "Bluetooth chooser opened");
+    this.addLog("info", `Momentum Serial Service UUID: ${MOMENTUM_SERIAL_SERVICE}`);
+    this.addLog("info", `optionalServices: [${MOMENTUM_SERIAL_SERVICE}]`);
 
     let device: BluetoothDevice;
     try {
@@ -203,12 +216,23 @@ class MomentumBleTransport implements FlipperBleTransport {
       this.discovery = discovery;
       this.addLog("info", "GATT service discovery started");
 
+      // Diagnostic: enumerate every primary service the browser actually
+      // exposes after connect. Read-only; some browsers refuse enumeration.
+      try {
+        const services = await gatt.getPrimaryServices();
+        this.addLog("info", `Services exposed by browser (${services.length}):`);
+        for (const s of services) this.addLog("info", `Service: ${s.uuid}`);
+      } catch (error) {
+        this.addLog("warn", `Service enumeration refused by browser (${describeOriginalError(error)})`);
+      }
+
       let service;
       try {
         service = await gatt.getPrimaryService(MOMENTUM_SERIAL_SERVICE);
       } catch (error) {
+        this.addLog("error", `getPrimaryService(FE60) original error — ${describeOriginalError(error)}`);
         throw new Error(
-          `Momentum Serial Service (FE60) could not be discovered: ${describeError(error)}`,
+          `Momentum Serial Service (FE60) could not be discovered. Original error: ${describeOriginalError(error)}`,
         );
       }
       discovery.serviceFound = true;
