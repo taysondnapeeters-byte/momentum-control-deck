@@ -34,6 +34,8 @@ export interface LatestFrame {
 
 const EMPTY_STATS: StreamStats = { frames: 0, dropped: 0, lastSize: null, lastAt: null, fps: 0 };
 const MOCK_FRAME_MS = 100;
+/** A single input send may never block the queue longer than this. */
+const SEND_WATCHDOG_MS = 6000;
 
 export function useScreenStream() {
   const { settings, connection } = useAppState();
