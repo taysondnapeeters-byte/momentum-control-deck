@@ -154,12 +154,18 @@ export function useScreenStream() {
   }, [connection, detach, mockActive]);
 
   /**
-   * One gesture per control: PRESS on down, then SHORT + RELEASE on up.
-   * Sends are serialized so SHORT reaches the wire before RELEASE.
+   * One gesture per control. A quick tap sends exactly one SHORT event (the
+   * qFlipper approach — menus listen for SHORT, and RPC input bypasses the
+   * hardware timer that would normally synthesize it). A hold sends PRESS when
+   * the threshold is crossed and RELEASE on pointer up. Sends are serialized
+   * so events never arrive out of order.
    */
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const sendKey = useCallback(
-    async (key: FlipperInputKey, action: "press" | "release" | "short") => {
+    async (key: FlipperInputKey, gesture: PadGesture) => {
+      const action: FlipperInputAction =
+        gesture === "tap" ? "short" : gesture === "holdStart" ? "press" : "release";
+
       if (action === "press") {
         if (heldRef.current.has(key)) return;
         heldRef.current.add(key);
@@ -167,14 +173,13 @@ export function useScreenStream() {
         if (!heldRef.current.has(key)) return;
         heldRef.current.delete(key);
       }
-      // "short" touches nothing: it is always bracketed by PRESS and RELEASE.
+      // "short" touches nothing: a tap is never bracketed by PRESS/RELEASE.
 
       if (mockActive) {
-        // The simulated display already reacted to the press; SHORT is a no-op.
-        if (action === "short") return;
         const state = mockStateRef.current;
         state.pressed = action === "press" ? key : null;
-        if (action === "press") {
+        // The simulated display reacts to taps (SHORT) and hold starts.
+        if (action !== "release") {
           if (key === "down") state.selection = (state.selection + 1) % MOCK_MENU_ROWS;
           if (key === "up") state.selection = (state.selection + MOCK_MENU_ROWS - 1) % MOCK_MENU_ROWS;
           if (key === "ok" || key === "right") state.tick += 8;

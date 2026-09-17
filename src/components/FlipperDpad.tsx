@@ -7,11 +7,13 @@ import type { FlipperInputKey } from "@/services";
 /**
  * Touch controls for the six physical keys.
  *
- * Pointer down sends PRESS. Pointer up/cancel/lost-capture synthesizes the
- * SHORT event the Flipper GUI queue expects (menus listen for SHORT, which the
- * physical hardware timer normally produces), then sends RELEASE — exactly
- * once per press. Holding a key never repeats the PRESS request.
- * onPointerLeave is intentionally NOT used: it fires false RELEASEs on touch
+ * RPC input bypasses the Flipper's hardware debounce timer, so the firmware
+ * never synthesizes the SHORT event that menus and lists listen for. A quick
+ * tap therefore sends exactly one SHORT event and nothing else (the qFlipper /
+ * official web app approach). Holding a control beyond HOLD_THRESHOLD_MS
+ * switches to physical-press emulation: PRESS at the threshold, RELEASE on
+ * pointer up — no SHORT, since none was bracketed by that PRESS.
+ * onPointerLeave is intentionally NOT used: it fires false releases on touch
  * screens.
  */
 
@@ -25,6 +27,12 @@ const FLIPPER_KEYS: Record<FlipperInputKey, number> = {
   back: 5,
 };
 
+/** Gestures the pad reports to the stream hook. */
+export type PadGesture = "tap" | "holdStart" | "holdRelease";
+
+/** Press longer than this and the gesture becomes a hold (PRESS/RELEASE). */
+const HOLD_THRESHOLD_MS = 400;
+
 function PadButton({
   flipperKey,
   label,
@@ -35,41 +43,61 @@ function PadButton({
 }: {
   flipperKey: FlipperInputKey;
   label: string;
-  onInput: (key: FlipperInputKey, action: "press" | "release" | "short") => void;
+  onInput: (key: FlipperInputKey, gesture: PadGesture) => void;
   disabled: boolean;
   className?: string;
   children: ReactNode;
 }) {
   const held = useRef(false);
+  const isHold = useRef(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const log = (type: string) =>
+    console.log(
+      `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=${type}`,
+    );
+
+  const clearHoldTimer = () => {
+    if (holdTimer.current !== null) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
 
   const press = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (disabled || held.current) return;
     held.current = true;
+    isHold.current = false;
     event.preventDefault();
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
       // Best-effort: an already-released or synthetic pointer cannot be captured.
     }
-    console.log(
-      `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=PRESS`,
-    );
-    onInput(flipperKey, "press");
+    // No RPC on touch-down. If the pointer is still down when the threshold
+    // expires, the gesture becomes a hold and PRESS is sent.
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      if (!held.current) return;
+      isHold.current = true;
+      log("PRESS");
+      onInput(flipperKey, "holdStart");
+    }, HOLD_THRESHOLD_MS);
   };
 
   const release = () => {
     if (!held.current) return;
     held.current = false;
-    // SHORT is synthesized here because RPC input bypasses the hardware timer
-    // that would normally produce it. RELEASE completes the gesture lifecycle.
-    console.log(
-      `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=SHORT`,
-    );
-    onInput(flipperKey, "short");
-    console.log(
-      `Virtual Flipper input:\nkey=${label.toUpperCase()}\nkeyValue=${FLIPPER_KEYS[flipperKey]}\ntype=RELEASE`,
-    );
-    onInput(flipperKey, "release");
+    clearHoldTimer();
+    if (isHold.current) {
+      isHold.current = false;
+      log("RELEASE");
+      onInput(flipperKey, "holdRelease");
+    } else {
+      // Quick tap: exactly one SHORT event, nothing else.
+      log("SHORT");
+      onInput(flipperKey, "tap");
+    }
   };
 
   return (
@@ -94,7 +122,7 @@ export function FlipperDpad({
   onInput,
   disabled,
 }: {
-  onInput: (key: FlipperInputKey, action: "press" | "release" | "short") => void;
+  onInput: (key: FlipperInputKey, gesture: PadGesture) => void;
   disabled: boolean;
 }) {
   const shared = { onInput, disabled };
