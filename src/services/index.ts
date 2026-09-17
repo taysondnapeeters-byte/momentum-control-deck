@@ -254,6 +254,10 @@ export interface FlipperRpc {
   getPowerInfo(): Promise<RpcPowerInfoResult>;
   /** Read-only directory listing for a Flipper storage path such as `/ext`. */
   listStorage(path: string): Promise<StorageListResult>;
+  /** Read-only metadata for a single file or directory. */
+  statStorage(path: string): Promise<StorageStatResult>;
+  /** Read-only file contents. Bytes are returned untouched. */
+  readStorage(path: string): Promise<StorageReadResult>;
 }
 
 export interface FlipperDevice {
