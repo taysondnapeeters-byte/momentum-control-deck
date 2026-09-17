@@ -12,7 +12,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppState } from "@/state/AppStateProvider";
 import { getFlipperRpc } from "@/services/flipperRpc";
 import { createMockFramebuffer, MOCK_MENU_ROWS } from "@/services/flipperScreenMock";
-import type { FlipperInputKey, ScreenFrameEvent } from "@/services";
+import type { FlipperInputAction, FlipperInputKey, ScreenFrameEvent } from "@/services";
+import type { PadGesture } from "@/components/FlipperDpad";
 
 const rpc = getFlipperRpc();
 
