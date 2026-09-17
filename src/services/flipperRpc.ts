@@ -123,6 +123,8 @@ class MomentumRpc {
   private lastDeviceInfo: RpcDeviceInfoResult | null = null;
   private lastPowerInfo: RpcPowerInfoResult | null = null;
   private lastStorageList: StorageListResult | null = null;
+  private lastStorageStat: StorageStatResult | null = null;
+  private lastStorageRead: StorageReadResult | null = null;
   /** Raw RX hex of the frames that completed a request, by command ID. */
   private completedRxHex = new Map<number, string>();
   /** Hex of the most recently decoded incoming frame, for diagnostics. */
@@ -159,6 +161,8 @@ class MomentumRpc {
       lastDeviceInfo: this.lastDeviceInfo,
       lastPowerInfo: this.lastPowerInfo,
       lastStorageList: this.lastStorageList,
+      lastStorageStat: this.lastStorageStat,
+      lastStorageRead: this.lastStorageRead,
     };
   }
 
