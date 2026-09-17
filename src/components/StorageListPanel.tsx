@@ -4,6 +4,9 @@ import { File as FileIcon, Folder, HardDrive, Loader2 } from "lucide-react";
 import { Panel } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 import { InfoRow } from "@/components/DeviceDiagnostics";
+import { FileViewerPanel } from "@/components/FileViewerPanel";
+import { MAX_READ_BYTES } from "@/services/flipperRpc";
+import type { StorageReadResult, StorageStatResult } from "@/services";
 import { useAppState } from "@/state/AppStateProvider";
 
 /** The first path this phase browses. Navigation is intentionally not enabled. */
