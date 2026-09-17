@@ -302,6 +302,8 @@ export interface FlipperRpc {
   statStorage(path: string): Promise<StorageStatResult>;
   /** Read-only file contents. Bytes are returned untouched. */
   readStorage(path: string): Promise<StorageReadResult>;
+  /** Creates a file. The caller must have confirmed the path does not exist. */
+  writeStorage(path: string, bytes: Uint8Array): Promise<StorageWriteResult>;
 }
 
 export interface FlipperDevice {
