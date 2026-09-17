@@ -1662,6 +1662,29 @@ class MomentumRpc {
     return result;
   }
 
+  private finishStorageWrite(
+    partial: Partial<StorageWriteResult> & { ok: boolean; path: string; size: number },
+  ): StorageWriteResult {
+    const result: StorageWriteResult = {
+      ok: partial.ok,
+      mock: false,
+      commandId: partial.commandId ?? null,
+      path: partial.path,
+      size: partial.size,
+      chunks: partial.chunks ?? 0,
+      roundTripMs: partial.roundTripMs ?? null,
+      txHex: partial.txHex ?? null,
+      rxHex: partial.rxHex ?? null,
+      status: partial.status ?? null,
+      error: partial.error ?? null,
+      partial: partial.partial ?? false,
+      at: Date.now(),
+    };
+    this.lastStorageWrite = result;
+    this.emit();
+    return result;
+  }
+
   private finishStorageRead(
     partial: Partial<StorageReadResult> & { ok: boolean; path: string },
   ): StorageReadResult {
