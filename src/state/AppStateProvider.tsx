@@ -192,6 +192,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           };
         }
       },
+      refreshStorageList: async (path) => {
+        // Mock mode never touches the radio and is always labelled as mock.
+        if (settings.mockMode && ble.state !== "connected") return rpc.mockStorageList(path);
+        try {
+          return await rpc.listStorage(path);
+        } catch (error) {
+          console.error("Storage List failed", error);
+          return rpc.getSnapshot().lastStorageList ?? {
+            ok: false,
+            mock: false,
+            commandId: null,
+            path,
+            roundTripMs: null,
+            entries: [],
+            txHex: null,
+            rxHex: null,
+            status: null,
+            error: error instanceof Error ? error.message : "Unknown RPC error.",
+            at: Date.now(),
+          };
+        }
+      },
       connectFlipper: async () => {
         try {
           await transport.connect();
