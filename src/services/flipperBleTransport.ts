@@ -216,10 +216,21 @@ class MomentumBleTransport implements FlipperBleTransport {
       this.discovery = discovery;
       this.addLog("info", "GATT service discovery started");
 
+      // Diagnostic: enumerate every primary service the browser actually
+      // exposes after connect. Read-only; some browsers refuse enumeration.
+      try {
+        const services = await gatt.getPrimaryServices();
+        this.addLog("info", `Services exposed by browser (${services.length}):`);
+        for (const s of services) this.addLog("info", `Service: ${s.uuid}`);
+      } catch (error) {
+        this.addLog("warn", `Service enumeration refused by browser (${describeOriginalError(error)})`);
+      }
+
       let service;
       try {
         service = await gatt.getPrimaryService(MOMENTUM_SERIAL_SERVICE);
       } catch (error) {
+        this.addLog("error", `getPrimaryService(FE60) original error — ${describeOriginalError(error)}`);
         throw new Error(
           `Momentum Serial Service (FE60) could not be discovered: ${describeError(error)}`,
         );
