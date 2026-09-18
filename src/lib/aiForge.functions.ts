@@ -36,18 +36,20 @@ export const generatePayload = createServerFn({ method: "POST" })
     const systemInstruction =
       data.scriptType === "duckyscript" ? DUCKY_SYSTEM : FLIPPER_JS_SYSTEM;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-      key,
-    )}`;
+    const url = "https://generativelanguage.googleapis.com/v1beta/interactions";
 
     let res: Response;
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": key,
+          "Api-Revision": "2026-05-20",
+        },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemInstruction }] },
-          contents: [{ role: "user", parts: [{ text: data.prompt }] }],
+          model: "gemini-3.8-flash",
+          input: `${systemInstruction}\n\nUser request: ${data.prompt}`,
         }),
       });
     } catch {
@@ -67,11 +69,10 @@ export const generatePayload = createServerFn({ method: "POST" })
     }
 
     const payload = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      outputText?: string;
+      interaction?: { outputText?: string };
     };
-    const text = payload.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("")
+    const text = (payload.outputText ?? payload.interaction?.outputText ?? "")
       .trim();
 
     if (!text) {
