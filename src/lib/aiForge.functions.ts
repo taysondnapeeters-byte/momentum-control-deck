@@ -68,12 +68,26 @@ export const generatePayload = createServerFn({ method: "POST" })
       };
     }
 
+    // Defensive parsing across the documented shapes: a top-level outputText,
+    // an interaction-wrapped outputText, or the steps array where the text
+    // lives in the "model_output" step's content parts.
     const payload = (await res.json()) as {
       outputText?: string;
       interaction?: { outputText?: string };
+      steps?: { type?: string; content?: { text?: string }[] }[];
     };
-    const text = (payload.outputText ?? payload.interaction?.outputText ?? "")
+    const fromSteps = payload.steps
+      ?.filter((s) => s.type === "model_output")
+      .flatMap((s) => s.content ?? [])
+      .map((c) => c.text ?? "")
+      .join("")
       .trim();
+    const text = (
+      payload.outputText ??
+      payload.interaction?.outputText ??
+      fromSteps ??
+      ""
+    ).trim();
 
     if (!text) {
       return {
