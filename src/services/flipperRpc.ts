@@ -1574,6 +1574,20 @@ class MomentumRpc {
     return result;
   }
 
+  /**
+   * Tracked request: starts a Flipper app by name (PB_Main tag 16,
+   * `PB_App.StartRequest`). `args` is passed through untouched — for file
+   * based apps (Bad USB, JS) it is the full `/ext/...` path of the payload.
+   * Resolves ok only when the firmware acknowledges with CommandStatus.OK.
+   */
+  async startApp(name: string, args: string): Promise<RpcSimpleResult> {
+    return this.simpleRequest(`App start ${name}`, {
+      commandStatus: PB.CommandStatus.OK,
+      hasNext: false,
+      appStartRequest: { name, args },
+    });
+  }
+
   /** Mock-mode equivalents. Nothing is transmitted and nothing is decoded. */
   mockSimpleResult(label: string): RpcSimpleResult {
     this.transport.logEvent("info", `Mock ${label} — simulated, no Flipper involved`);

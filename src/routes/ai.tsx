@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Copy, Loader2, Save, Sparkles, Terminal } from "lucide-react";
+import { Copy, Loader2, Play, Save, Sparkles, Terminal } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -17,6 +17,12 @@ type ScriptType = "duckyscript" | "flipper-js";
 const TARGET_DIR: Record<ScriptType, string> = {
   duckyscript: "/ext/badusb",
   "flipper-js": "/ext/apps/Scripts",
+};
+
+/** The Flipper app that runs each script type, keyed by script type. */
+const RUNNER_APP: Record<ScriptType, string> = {
+  duckyscript: "Bad USB",
+  "flipper-js": "JS",
 };
 
 export const Route = createFileRoute("/ai")({
@@ -48,6 +54,7 @@ function AiForgePage() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingAndRunning, setSavingAndRunning] = useState(false);
   const [result, setResult] = useState<{
     script: string;
     filename: string;
@@ -56,6 +63,7 @@ function AiForgePage() {
   const [error, setError] = useState<string | null>(null);
 
   const canSubmit = prompt.trim().length > 0 && !loading;
+  const busy = saving || savingAndRunning;
 
   async function onForge() {
     if (!canSubmit) return;
@@ -86,20 +94,21 @@ function AiForgePage() {
   /**
    * Create-new-file only, same safeguards as the Files page: Stat first and
    * refuse an existing path with zero write packets sent. Never overwrites.
+   * Returns the saved path on success, null on any failure (a toast was
+   * already shown). Shared by "Save to Flipper" and "Save & Run".
    */
-  async function onSave() {
-    if (!result || saving) return;
+  async function saveToFlipper(): Promise<string | null> {
+    if (!result) return null;
     const mockActive = settings.mockMode && connection !== "connected";
     if (connection !== "connected" && !mockActive) {
       toast.error("Flipper not connected. Connect on the Device tab first.");
-      return;
+      return null;
     }
 
     const path = `${TARGET_DIR[result.scriptType]}/${result.filename}`;
     const bytes = new TextEncoder().encode(result.script);
     const rpc = getFlipperRpc();
 
-    setSaving(true);
     try {
       // 1. Refuse anything that already exists. Nothing is sent yet.
       const before = mockActive
@@ -110,7 +119,7 @@ function AiForgePage() {
         toast.error(
           `A ${kind} already exists at ${path}. This version only creates new files, so nothing was sent.`,
         );
-        return;
+        return null;
       }
 
       // 2. Write.
@@ -123,14 +132,52 @@ function AiForgePage() {
             ? `${write.error ?? "The write failed."} A partial or empty file may have been created on the Flipper.`
             : (write.error ?? "The write failed."),
         );
-        return;
+        return null;
       }
 
       toast.success(`Saved to ${path}`);
+      return path;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "The write failed.");
+      return null;
+    }
+  }
+
+  async function onSave() {
+    if (!result || busy) return;
+    setSaving(true);
+    try {
+      await saveToFlipper();
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * Same save pipeline, then — only on a fully successful write — launches
+   * the matching Flipper app with the saved path as its argument.
+   */
+  async function onSaveAndRun() {
+    if (!result || busy) return;
+    const mockActive = settings.mockMode && connection !== "connected";
+    setSavingAndRunning(true);
+    try {
+      const path = await saveToFlipper();
+      if (!path) return;
+
+      const appName = RUNNER_APP[result.scriptType];
+      const start = mockActive
+        ? getFlipperRpc().mockSimpleResult(`App start ${appName}`)
+        : await getFlipperRpc().startApp(appName, path);
+      if (start.ok) {
+        toast.success("Script started on Flipper!");
+      } else {
+        toast.error(
+          `The file was saved, but the Flipper refused to start ${appName}: ${start.error ?? "unknown error"}.`,
+        );
+      }
+    } finally {
+      setSavingAndRunning(false);
     }
   }
 
@@ -249,25 +296,45 @@ function AiForgePage() {
             <pre className="mt-3 max-h-[420px] overflow-auto rounded-xl border border-border bg-surface-2 p-3 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">
               {result.script}
             </pre>
-            <Button
-              size="lg"
-              variant="secondary"
-              className="mt-4 h-12 w-full rounded-xl text-base"
-              onClick={onSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
-                  Transferring…
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-5 w-5" aria-hidden="true" />
-                  Save to Flipper
-                </>
-              )}
-            </Button>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <Button
+                size="lg"
+                variant="secondary"
+                className="h-12 rounded-xl text-base"
+                onClick={onSave}
+                disabled={busy}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+                    Transferring…
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-5 w-5" aria-hidden="true" />
+                    Save to Flipper
+                  </>
+                )}
+              </Button>
+              <Button
+                size="lg"
+                className="h-12 rounded-xl text-base"
+                onClick={onSaveAndRun}
+                disabled={busy}
+              >
+                {savingAndRunning ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+                    Saving &amp; starting…
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-5 w-5" aria-hidden="true" />
+                    Save &amp; Run
+                  </>
+                )}
+              </Button>
+            </div>
           </Panel>
         ) : null}
       </div>

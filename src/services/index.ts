@@ -340,6 +340,8 @@ export interface FlipperRpc {
   readStorage(path: string): Promise<StorageReadResult>;
   /** Creates a file. The caller must have confirmed the path does not exist. */
   writeStorage(path: string, bytes: Uint8Array): Promise<StorageWriteResult>;
+  /** Starts a Flipper app by name; `args` is typically a full `/ext/...` path. */
+  startApp(name: string, args: string): Promise<RpcSimpleResult>;
   /** Starts the GUI screen stream. Frames then arrive unsolicited. */
   startScreenStream(): Promise<RpcSimpleResult>;
   /** Stops the GUI screen stream. */
