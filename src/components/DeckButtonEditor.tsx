@@ -102,6 +102,41 @@ export function DeckButtonEditor({ open, button, onOpenChange, onSave }: Props) 
               ))}
             </div>
           </div>
+          <div className="space-y-2">
+            <Label>Runs on tap (optional)</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {APP_TYPES.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setAppType(type)}
+                  className={`tap-scale flex h-11 items-center justify-center rounded-xl border text-sm font-medium ${
+                    appType === type
+                      ? "border-signal text-signal"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+            <Input
+              id="deck-target-path"
+              value={targetPath}
+              maxLength={255}
+              placeholder="/ext/badusb/demo.txt"
+              onChange={(e) => setTargetPath(e.target.value)}
+              className="h-12 rounded-xl font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">
+              Exact script path on the Flipper. Leave empty for a display-only button.
+            </p>
+            {targetPath.trim() && !targetPath.trim().startsWith("/ext/") ? (
+              <p className="text-xs text-destructive">
+                Scripts live under /ext/ on the Flipper — check the path.
+              </p>
+            ) : null}
+          </div>
         </div>
 
         <DialogFooter>
@@ -114,6 +149,8 @@ export function DeckButtonEditor({ open, button, onOpenChange, onSave }: Props) 
                 label: label.trim(),
                 icon,
                 accent,
+                appType: targetPath.trim() ? appType : undefined,
+                targetPath: targetPath.trim() || undefined,
               })
             }
           >

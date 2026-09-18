@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ACCENT_CLASSES, DeckIcon } from "@/components/DeckIcon";
 import { DeckButtonEditor } from "@/components/DeckButtonEditor";
 import { PageShell, Panel, StatusPill } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
+import { getFlipperRpc } from "@/services/flipperRpc";
 import { useAppState } from "@/state/AppStateProvider";
 import type { DeckButton } from "@/types/deck";
 
@@ -31,14 +32,48 @@ export const Route = createFileRoute("/")({
 });
 
 function DeckPage() {
-  const { deck, upsertButton, removeButton, moveButton } = useAppState();
+  const { deck, upsertButton, removeButton, moveButton, connection, settings } = useAppState();
   const [editMode, setEditMode] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<DeckButton | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
 
   const openEditor = (button: DeckButton | null) => {
     setEditing(button);
     setEditorOpen(true);
+  };
+
+  const runButton = async (button: DeckButton) => {
+    if (!button.targetPath || !button.appType) {
+      toast(`"${button.label}" has no script configured — edit it to add one.`);
+      return;
+    }
+    const mockActive = settings.mockMode && connection !== "connected";
+    if (!mockActive && connection !== "connected") {
+      toast.error("Flipper not connected");
+      return;
+    }
+    setRunningId(button.id);
+    toast(`Starting ${button.label}…`);
+    try {
+      const rpc = getFlipperRpc();
+      const result = mockActive
+        ? rpc.mockSimpleResult(`App start ${button.appType}`)
+        : await rpc.startApp(button.appType, button.targetPath);
+      if (result.ok) {
+        toast.success(
+          mockActive
+            ? `Mock run: ${button.label} (no Flipper contacted)`
+            : `${button.label} started on Flipper`,
+        );
+      } else {
+        toast.error(`Flipper refused to start ${button.label}: ${result.status ?? "unknown status"}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start the app.");
+    } finally {
+      setRunningId(null);
+    }
   };
 
   return (
