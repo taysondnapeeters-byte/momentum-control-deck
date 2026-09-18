@@ -16,7 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { DeckAccent, DeckButton, DeckIconKey } from "@/types/deck";
+import type { DeckAccent, DeckAppType, DeckButton, DeckIconKey } from "@/types/deck";
+
+const APP_TYPES: DeckAppType[] = ["Bad USB", "JS"];
 
 interface Props {
   open: boolean;
@@ -29,12 +31,16 @@ export function DeckButtonEditor({ open, button, onOpenChange, onSave }: Props) 
   const [label, setLabel] = useState("");
   const [icon, setIcon] = useState<DeckIconKey>("sliders");
   const [accent, setAccent] = useState<DeckAccent>("orange");
+  const [appType, setAppType] = useState<DeckAppType>("Bad USB");
+  const [targetPath, setTargetPath] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setLabel(button?.label ?? "");
     setIcon(button?.icon ?? "sliders");
     setAccent(button?.accent ?? "orange");
+    setAppType(button?.appType ?? "Bad USB");
+    setTargetPath(button?.targetPath ?? "");
   }, [open, button]);
 
   return (
