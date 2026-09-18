@@ -83,7 +83,7 @@ export const generatePayload = createServerFn({ method: "POST" })
           "Api-Revision": "2026-05-20",
         },
         body: JSON.stringify({
-          model: "gemini-3.8-flash",
+          model: "gemini-3.6-flash",
           input: `${systemInstruction}\n\nUser request: ${data.prompt}`,
         }),
       });
