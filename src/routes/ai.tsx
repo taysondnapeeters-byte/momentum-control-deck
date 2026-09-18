@@ -331,7 +331,7 @@ function AiForgePage() {
             {mode === "ai" ? (
               <StatusPill tone="signal">Gemini 3.8 Flash</StatusPill>
             ) : (
-              <StatusPill tone="idle">No AI call</StatusPill>
+              <StatusPill tone="muted">No AI call</StatusPill>
             )}
           </div>
           <ToggleGroup
