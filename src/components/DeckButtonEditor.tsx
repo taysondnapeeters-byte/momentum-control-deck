@@ -143,16 +143,20 @@ export function DeckButtonEditor({ open, button, onOpenChange, onSave }: Props) 
           <Button
             className="h-12 w-full rounded-xl"
             disabled={!label.trim()}
-            onClick={() =>
-              onSave({
+            onClick={() => {
+              const path = targetPath.trim();
+              const next: DeckButton = {
                 id: button?.id ?? `btn-${Date.now().toString(36)}`,
                 label: label.trim(),
                 icon,
                 accent,
-                appType: targetPath.trim() ? appType : undefined,
-                targetPath: targetPath.trim() || undefined,
-              })
-            }
+              };
+              if (path) {
+                next.appType = appType;
+                next.targetPath = path;
+              }
+              onSave(next);
+            }}
           >
             Save button
           </Button>

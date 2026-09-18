@@ -101,7 +101,7 @@ function DeckPage() {
       <div className="mb-4">
         <StatusPill>
           <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-          Buttons are examples — nothing is sent yet
+          Buttons with a script path run it on the Flipper
         </StatusPill>
       </div>
 
@@ -118,16 +118,17 @@ function DeckPage() {
             >
               <button
                 type="button"
-                onClick={() =>
-                  editMode
-                    ? openEditor(button)
-                    : toast(`"${button.label}" is a UI example and does not run anything yet.`)
-                }
-                className="tap-scale flex min-h-[92px] flex-1 flex-col items-center justify-center gap-2 rounded-xl"
+                disabled={runningId === button.id}
+                onClick={() => (editMode ? openEditor(button) : void runButton(button))}
+                className="tap-scale flex min-h-[92px] flex-1 flex-col items-center justify-center gap-2 rounded-xl disabled:opacity-60"
               >
-                <span className={ACCENT_CLASSES[button.accent]}>
-                  <DeckIcon icon={button.icon} />
-                </span>
+                {runningId === button.id ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-signal" />
+                ) : (
+                  <span className={ACCENT_CLASSES[button.accent]}>
+                    <DeckIcon icon={button.icon} />
+                  </span>
+                )}
                 <span className="text-center text-sm font-medium tracking-wide">
                   {button.label}
                 </span>
