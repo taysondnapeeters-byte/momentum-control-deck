@@ -17,7 +17,7 @@ function stripFences(text: string): string {
   // Strip a leading ```lang and trailing ``` if the whole thing is fenced.
   const fence = /^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```$/;
   const m = out.match(fence);
-  if (m) out = m[1];
+  if (m && m[1]) out = m[1];
   return out.trim();
 }
 
