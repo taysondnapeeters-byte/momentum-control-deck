@@ -12,13 +12,18 @@ export type DeckIconKey =
 
 export type DeckAccent = "orange" | "cyan" | "violet" | "lime" | "rose" | "slate";
 
+/** Momentum firmware app that can run a saved script. */
+export type DeckAppType = "Bad USB" | "JS";
+
 export interface DeckButton {
   id: string;
   label: string;
   icon: DeckIconKey;
   accent: DeckAccent;
-  /** Reserved for a future hardware action binding. Unused in this phase. */
-  action?: null;
+  /** App launched on the Flipper when the button is tapped. Optional. */
+  appType?: DeckAppType;
+  /** Exact script path on the Flipper, e.g. /ext/badusb/demo.txt. Optional. */
+  targetPath?: string;
 }
 
 export interface DeckConfig {

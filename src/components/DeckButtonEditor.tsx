@@ -16,7 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { DeckAccent, DeckButton, DeckIconKey } from "@/types/deck";
+import type { DeckAccent, DeckAppType, DeckButton, DeckIconKey } from "@/types/deck";
+
+const APP_TYPES: DeckAppType[] = ["Bad USB", "JS"];
 
 interface Props {
   open: boolean;
@@ -29,12 +31,16 @@ export function DeckButtonEditor({ open, button, onOpenChange, onSave }: Props) 
   const [label, setLabel] = useState("");
   const [icon, setIcon] = useState<DeckIconKey>("sliders");
   const [accent, setAccent] = useState<DeckAccent>("orange");
+  const [appType, setAppType] = useState<DeckAppType>("Bad USB");
+  const [targetPath, setTargetPath] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setLabel(button?.label ?? "");
     setIcon(button?.icon ?? "sliders");
     setAccent(button?.accent ?? "orange");
+    setAppType(button?.appType ?? "Bad USB");
+    setTargetPath(button?.targetPath ?? "");
   }, [open, button]);
 
   return (
@@ -96,20 +102,61 @@ export function DeckButtonEditor({ open, button, onOpenChange, onSave }: Props) 
               ))}
             </div>
           </div>
+          <div className="space-y-2">
+            <Label>Runs on tap (optional)</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {APP_TYPES.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setAppType(type)}
+                  className={`tap-scale flex h-11 items-center justify-center rounded-xl border text-sm font-medium ${
+                    appType === type
+                      ? "border-signal text-signal"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+            <Input
+              id="deck-target-path"
+              value={targetPath}
+              maxLength={255}
+              placeholder="/ext/badusb/demo.txt"
+              onChange={(e) => setTargetPath(e.target.value)}
+              className="h-12 rounded-xl font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">
+              Exact script path on the Flipper. Leave empty for a display-only button.
+            </p>
+            {targetPath.trim() && !targetPath.trim().startsWith("/ext/") ? (
+              <p className="text-xs text-destructive">
+                Scripts live under /ext/ on the Flipper — check the path.
+              </p>
+            ) : null}
+          </div>
         </div>
 
         <DialogFooter>
           <Button
             className="h-12 w-full rounded-xl"
             disabled={!label.trim()}
-            onClick={() =>
-              onSave({
+            onClick={() => {
+              const path = targetPath.trim();
+              const next: DeckButton = {
                 id: button?.id ?? `btn-${Date.now().toString(36)}`,
                 label: label.trim(),
                 icon,
                 accent,
-              })
-            }
+              };
+              if (path) {
+                next.appType = appType;
+                next.targetPath = path;
+              }
+              onSave(next);
+            }}
           >
             Save button
           </Button>
