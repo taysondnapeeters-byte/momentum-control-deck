@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Copy, Loader2, Sparkles, Terminal } from "lucide-react";
+import { Copy, Loader2, Save, Sparkles, Terminal } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -9,8 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { generatePayload } from "@/lib/aiForge.functions";
+import { getFlipperRpc } from "@/services/flipperRpc";
+import { useAppState } from "@/state/AppStateProvider";
 
 type ScriptType = "duckyscript" | "flipper-js";
+
+const TARGET_DIR: Record<ScriptType, string> = {
+  duckyscript: "/ext/badusb",
+  "flipper-js": "/ext/apps/Scripts",
+};
 
 export const Route = createFileRoute("/ai")({
   head: () => ({
@@ -36,12 +43,16 @@ export const Route = createFileRoute("/ai")({
 
 function AiForgePage() {
   const forge = useServerFn(generatePayload);
+  const { connection, settings } = useAppState();
   const [scriptType, setScriptType] = useState<ScriptType>("duckyscript");
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ script: string; scriptType: ScriptType } | null>(
-    null,
-  );
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{
+    script: string;
+    filename: string;
+    scriptType: ScriptType;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const canSubmit = prompt.trim().length > 0 && !loading;
@@ -53,7 +64,11 @@ function AiForgePage() {
     try {
       const res = await forge({ data: { prompt: prompt.trim(), scriptType } });
       if (res.script) {
-        setResult({ script: res.script, scriptType: res.scriptType });
+        setResult({
+          script: res.script,
+          filename: res.filename ?? "ai_payload",
+          scriptType: res.scriptType,
+        });
         setError(null);
       } else {
         setResult(null);
@@ -68,13 +83,55 @@ function AiForgePage() {
     }
   }
 
-  function onApprove() {
-    if (!result) return;
-    console.log("AI Forge approved", {
-      scriptType: result.scriptType,
-      script: result.script,
-    });
-    toast.success("Logged to console.");
+  /**
+   * Create-new-file only, same safeguards as the Files page: Stat first and
+   * refuse an existing path with zero write packets sent. Never overwrites.
+   */
+  async function onSave() {
+    if (!result || saving) return;
+    const mockActive = settings.mockMode && connection !== "connected";
+    if (connection !== "connected" && !mockActive) {
+      toast.error("Flipper not connected. Connect on the Device tab first.");
+      return;
+    }
+
+    const path = `${TARGET_DIR[result.scriptType]}/${result.filename}`;
+    const bytes = new TextEncoder().encode(result.script);
+    const rpc = getFlipperRpc();
+
+    setSaving(true);
+    try {
+      // 1. Refuse anything that already exists. Nothing is sent yet.
+      const before = mockActive
+        ? rpc.mockStorageStat(path)
+        : await rpc.statStorage(path);
+      if (before.ok && before.entry) {
+        const kind = before.entry.type === "dir" ? "folder" : "file";
+        toast.error(
+          `A ${kind} already exists at ${path}. This version only creates new files, so nothing was sent.`,
+        );
+        return;
+      }
+
+      // 2. Write.
+      const write = mockActive
+        ? rpc.mockStorageWrite(path, bytes)
+        : await rpc.writeStorage(path, bytes);
+      if (!write.ok) {
+        toast.error(
+          write.partial
+            ? `${write.error ?? "The write failed."} A partial or empty file may have been created on the Flipper.`
+            : (write.error ?? "The write failed."),
+        );
+        return;
+      }
+
+      toast.success(`Saved to ${path}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "The write failed.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function onCopy() {
@@ -98,7 +155,7 @@ function AiForgePage() {
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
               Script type
             </p>
-            <StatusPill tone="signal">Gemini 2.5 Flash</StatusPill>
+            <StatusPill tone="signal">Gemini 3.8 Flash</StatusPill>
           </div>
           <ToggleGroup
             type="single"
@@ -186,6 +243,9 @@ function AiForgePage() {
                 Copy
               </Button>
             </div>
+            <p className="mt-2 font-mono text-xs text-muted-foreground">
+              {TARGET_DIR[result.scriptType]}/{result.filename}
+            </p>
             <pre className="mt-3 max-h-[420px] overflow-auto rounded-xl border border-border bg-surface-2 p-3 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">
               {result.script}
             </pre>
@@ -193,9 +253,20 @@ function AiForgePage() {
               size="lg"
               variant="secondary"
               className="mt-4 h-12 w-full rounded-xl text-base"
-              onClick={onApprove}
+              onClick={onSave}
+              disabled={saving}
             >
-              Approve &amp; Log
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+                  Transferring…
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-5 w-5" aria-hidden="true" />
+                  Save to Flipper
+                </>
+              )}
             </Button>
           </Panel>
         ) : null}
